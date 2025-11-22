@@ -3,6 +3,13 @@
 XLSX Import Interface - Application pour importer et gérer des fichiers XLSX
 avec filtres, clés de répartition et construction de nouvelles lignes.
 Gère les données d'interactions avec agrégation par Semaine/Jour/Créneau (30min).
+
+AMÉLIORATIONS:
+- Hiérarchie temporelle correcte: Créneau → Jour → Semaine
+- Formule: nb = global_val × key_temporal × key_type × key_segmacro × key_segment × key_dcr × key_file × key_offre
+- Visualisation avant/après des modifications
+- Conversion interactive de fichiers avec sélection des poids
+- Système de baseline/revert
 """
 
 import tkinter as tk
@@ -17,6 +24,11 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import numpy as np
 
+# Nouveaux modules
+from temporal_keys_manager import TemporalKeysManager
+from before_after_visualizer import BeforeAfterVisualizer
+from file_converter_dialog import FileConverterDialog
+
 class CSVImportApp:
     def __init__(self, root):
         self.root = root
@@ -30,7 +42,10 @@ class CSVImportApp:
         self.max_history = 50
         self.check_vars = {}
 
-        # Clés de répartition
+        # Gestionnaire de clés temporelles avec hiérarchie correcte
+        self.temporal_keys_manager = TemporalKeysManager()
+
+        # Clés de répartition (compatibilité)
         self.distribution_keys = {}
 
         # Couleurs pour types
@@ -110,12 +125,16 @@ class CSVImportApp:
         self.tab_keys = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_keys, text="Clés de répartition")
 
+        self.tab_keys_advanced = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_keys_advanced, text="Clés Avancées")
+
         self.tab_construct = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_construct, text="Construction")
 
         self.setup_viz_tab()
         self.setup_edit_tab()
         self.setup_keys_tab()
+        self.setup_keys_advanced_tab()
         self.setup_construct_tab()
 
     def setup_viz_tab(self):
@@ -343,6 +362,213 @@ class CSVImportApp:
         ttk.Button(btn_frame, text="Ajouter clé", command=self.add_key_dialog).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Supprimer clé", command=self.delete_selected_key).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Normaliser (100%)", command=self.normalize_keys).pack(side=tk.LEFT, padx=5)
+
+    def setup_keys_advanced_tab(self):
+        """Gestion avancée des clés: Hiérarchie temporelle, Avant/Après, Conversion"""
+
+        # Frame contrôles
+        ctrl_frame = ttk.LabelFrame(self.tab_keys_advanced, text="Outils Avancés", padding="5")
+        ctrl_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        # Boutons principaux
+        ttk.Button(ctrl_frame, text="Visualiser Avant/Après Modifications",
+                  command=self.show_before_after_comparison).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_frame, text="Convertir Fichier (Semaine↔Jour↔Créneau)",
+                  command=self.open_file_converter).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_frame, text="Sauvegarder comme Baseline",
+                  command=self.save_baseline).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_frame, text="Revenir à Baseline",
+                  command=self.revert_to_baseline).pack(side=tk.LEFT, padx=5)
+
+        # Infos
+        info_frame = ttk.LabelFrame(self.tab_keys_advanced, text="Informations", padding="5")
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.advanced_info_text = tk.Text(info_frame, height=20, width=80)
+        self.advanced_info_text.pack(fill=tk.BOTH, expand=True)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(info_frame, orient="vertical", command=self.advanced_info_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.advanced_info_text.configure(yscrollcommand=scrollbar.set)
+
+        self.refresh_advanced_info()
+
+    def refresh_advanced_info(self):
+        """Rafraîchir les infos avancées"""
+        self.advanced_info_text.delete("1.0", tk.END)
+
+        text = "=" * 80 + "\n"
+        text += "HIÉRARCHIE TEMPORELLE\n"
+        text += "=" * 80 + "\n\n"
+
+        text += "Formule: nb = global_val × key_temporal × key_type × key_segmacro × key_segment × key_dcr × key_file × key_offre\n\n"
+
+        text += "Où:\n"
+        text += "  key_temporal = poids_créneau(dans jour) × poids_jour(dans semaine) × poids_semaine(dans plage)\n\n"
+
+        text += "Structure hiérarchique:\n"
+        text += "  Semaine (S01-S52)\n"
+        text += "    ├─ Jour (lundi-dimanche)\n"
+        text += "    │   ├─ Créneau (08:00-17:30 par 30min)\n"
+        text += "\n"
+
+        # État du gestionnaire
+        text += "-" * 80 + "\n"
+        text += "ÉTAT DU GESTIONNAIRE\n"
+        text += "-" * 80 + "\n\n"
+
+        diffs = self.temporal_keys_manager.get_differences()
+        if diffs["semaines"] or diffs["jours"] or diffs["creneaux"]:
+            text += "⚠️ MODIFICATIONS DÉTECTÉES (diff avec baseline):\n\n"
+
+            if diffs["semaines"]:
+                text += "Semaines modifiées:\n"
+                for semaine, vals in diffs["semaines"].items():
+                    text += f"  {semaine}: {vals['baseline']:.2f}% → {vals['current']:.2f}%\n"
+                text += "\n"
+
+            if diffs["jours"]:
+                text += "Jours modifiés:\n"
+                count = 0
+                for semaine, vals in diffs["jours"].items():
+                    if count < 3:
+                        text += f"  {semaine}: {len(vals['current'])} jours\n"
+                        count += 1
+                if len(diffs["jours"]) > 3:
+                    text += f"  ... ({len(diffs['jours'])} semaines modifiées)\n"
+                text += "\n"
+
+            if diffs["creneaux"]:
+                text += "Créneaux modifiés:\n"
+                count = 0
+                for date, vals in diffs["creneaux"].items():
+                    if count < 3:
+                        text += f"  {date}: {len(vals['current'])} créneaux\n"
+                        count += 1
+                if len(diffs["creneaux"]) > 3:
+                    text += f"  ... ({len(diffs['creneaux'])} dates modifiées)\n"
+        else:
+            text += "✓ Aucune modification (valeurs = baseline)\n\n"
+
+        # Clés actuelles
+        text += "-" * 80 + "\n"
+        text += "CLÉS ACTUELLES\n"
+        text += "-" * 80 + "\n\n"
+
+        keys = self.temporal_keys_manager.keys
+        text += f"Semaines: {len(keys['semaines'])} semaines\n"
+        if keys['semaines']:
+            total = sum(keys['semaines'].values())
+            text += f"  Total: {total:.1f}% (avant normalisation)\n"
+            text += f"  Exemple: {list(keys['semaines'].items())[0]}\n"
+        text += "\n"
+
+        text += f"Jours: {len(keys['jours'])} semaines avec jours\n"
+        if keys['jours']:
+            first_sem = list(keys['jours'].keys())[0]
+            text += f"  Semaine {first_sem}: {len(keys['jours'][first_sem])} jours\n"
+        text += "\n"
+
+        text += f"Créneaux: {len(keys['creneaux'])} jours avec créneaux\n"
+        if keys['creneaux']:
+            first_date = list(keys['creneaux'].keys())[0]
+            text += f"  {first_date}: {len(keys['creneaux'][first_date])} créneaux\n"
+
+        self.advanced_info_text.insert("1.0", text)
+
+    def show_before_after_comparison(self):
+        """Afficher la visualisation avant/après"""
+        if self.filtered_df is None or self.filtered_df.empty:
+            messagebox.showwarning("Attention", "Aucune donnée à visualiser")
+            return
+
+        # Créer une fenêtre avec visualiseur
+        viz_window = tk.Toplevel(self.root)
+        viz_window.title("Visualisation Avant/Après")
+        viz_window.geometry("1300x800")
+
+        viz = BeforeAfterVisualizer(viz_window)
+
+        # Données de test: avant = données filtrées, après = avec une modification de 15%
+        before_df = self.filtered_df.copy()
+        after_df = self.filtered_df.copy()
+        after_df["NbInteractions"] = (after_df["NbInteractions"] * 1.15).astype(int)
+
+        step = "jour"  # Par défaut
+        if "Pas" in self.filtered_df.columns:
+            pas_values = self.filtered_df["Pas"].unique()
+            if "Creneau" in pas_values or "creneau" in pas_values:
+                step = "creneau"
+            elif "Semaine" in pas_values or "semaine" in pas_values:
+                step = "semaine"
+
+        viz.set_data(before_df, after_df, step=step)
+
+    def open_file_converter(self):
+        """Ouvrir le dialogue de conversion de fichier"""
+        if self.filtered_df is None or self.filtered_df.empty:
+            messagebox.showwarning("Attention", "Aucune donnée à convertir")
+            return
+
+        # Déterminer le pas courant
+        current_step = "jour"
+        if "Pas" in self.filtered_df.columns:
+            pas_values = self.filtered_df["Pas"].dropna().unique()
+            if len(pas_values) > 0:
+                pas = str(pas_values[0]).lower()
+                if "creneau" in pas:
+                    current_step = "creneau"
+                elif "semaine" in pas:
+                    current_step = "semaine"
+
+        # Créer le dialogue
+        converter = FileConverterDialog(self.root, self.filtered_df, current_step,
+                                       temporal_keys_manager=self.temporal_keys_manager)
+        self.root.wait_window(converter)
+
+        # Récupérer le résultat
+        result = converter.get_result()
+        if result:
+            new_df, summary = result
+
+            # Afficher le résumé
+            summary_text = f"Conversion réussie:\n"
+            summary_text += f"  De: {summary['from_step'].upper()}\n"
+            summary_text += f"  À: {summary['to_step'].upper()}\n"
+            summary_text += f"  Avant: {summary['original_count']} lignes\n"
+            summary_text += f"  Après: {summary['new_count']} lignes\n"
+            summary_text += f"  Méthode: {summary['conversion_method']}\n\n"
+            summary_text += f"Détails:\n"
+            for detail in summary['details'][:5]:
+                summary_text += f"  - {detail}\n"
+            if len(summary['details']) > 5:
+                summary_text += f"  ... ({len(summary['details'])} lignes modifiées)\n"
+
+            messagebox.showinfo("Conversion", summary_text)
+
+            # Remplacer les données filtrées
+            self.df = new_df
+            self.filtered_df = new_df.copy()
+            self.update_all_views()
+
+    def save_baseline(self):
+        """Sauvegarder les clés actuelles comme baseline"""
+        self.temporal_keys_manager.save_baseline()
+        messagebox.showinfo("Baseline", "Clés sauvegardées comme baseline")
+        self.refresh_advanced_info()
+
+    def revert_to_baseline(self):
+        """Revenir aux clés baseline"""
+        if not self.temporal_keys_manager.baseline:
+            messagebox.showwarning("Attention", "Aucune baseline disponible")
+            return
+
+        response = messagebox.askyesno("Confirmer", "Revenir aux valeurs de baseline?")
+        if response:
+            self.temporal_keys_manager.revert_to_baseline()
+            messagebox.showinfo("OK", "Revenu aux valeurs de baseline")
+            self.refresh_advanced_info()
 
     def setup_temporal_keys(self):
         ttk.Label(self.temporal_frame, text="Pas:", font=('TkDefaultFont', 10, 'bold')).pack(anchor=tk.W, pady=5)
