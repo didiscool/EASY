@@ -11,12 +11,15 @@ import pandas as pd
 from datetime import datetime
 import os
 import copy
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 class CSVImportApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Import CSV - Gestion des Interactions")
-        self.root.geometry("1400x900")
+        self.root.geometry("1400x1000")
 
         self.df = None
         self.filtered_df = None
@@ -108,6 +111,14 @@ class CSVImportApp:
         self.use_date_filter = tk.BooleanVar(value=False)
         ttk.Checkbutton(filter_row3, text="Filtrer par date", variable=self.use_date_filter).pack(side=tk.LEFT, padx=15)
 
+        # Section filtres actifs (mise en avant)
+        self.active_filters_frame = ttk.LabelFrame(main_frame, text="Filtres actifs", padding="5")
+        self.active_filters_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.active_filters_label = ttk.Label(self.active_filters_frame, text="Aucun filtre actif",
+                                               font=('TkDefaultFont', 10, 'bold'), foreground='gray')
+        self.active_filters_label.pack(side=tk.LEFT, padx=10)
+
         # Section résumé par Type
         summary_frame = ttk.LabelFrame(main_frame, text="Somme NbInteractions par Type", padding="5")
         summary_frame.pack(fill=tk.X, pady=(0, 10))
@@ -118,6 +129,15 @@ class CSVImportApp:
         self.summary_tree.column("Type", width=200)
         self.summary_tree.column("Total", width=150)
         self.summary_tree.pack(fill=tk.X)
+
+        # Section histogramme
+        chart_frame = ttk.LabelFrame(main_frame, text="Évolution NbInteractions par Date début", padding="5")
+        chart_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.fig = Figure(figsize=(12, 3), dpi=80)
+        self.ax = self.fig.add_subplot(111)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.X)
 
         # Section prévisualisation
         preview_frame = ttk.LabelFrame(main_frame, text="Prévisualisation des données", padding="5")
@@ -210,6 +230,8 @@ class CSVImportApp:
                 self.populate_filters()
                 self.update_treeview()
                 self.update_summary()
+                self.update_histogram()
+                self.update_active_filters_display()
                 messagebox.showinfo("Succès", f"Fichier importé: {len(self.df)} lignes")
             except Exception as e:
                 messagebox.showerror("Erreur", f"Erreur lors de l'import: {str(e)}")
@@ -286,6 +308,8 @@ class CSVImportApp:
 
         self.update_treeview()
         self.update_summary()
+        self.update_histogram()
+        self.update_active_filters_display()
 
     def reset_filters(self):
         self.segment_macro_var.set("")
@@ -300,6 +324,89 @@ class CSVImportApp:
             self.filtered_df = self.df.copy()
             self.update_treeview()
             self.update_summary()
+            self.update_histogram()
+            self.update_active_filters_display()
+
+    def update_active_filters_display(self):
+        """Mettre à jour l'affichage des filtres actifs"""
+        active_filters = []
+
+        filter_labels = [
+            (self.segment_macro_var.get(), "SegmentMacro"),
+            (self.file_var.get(), "File"),
+            (self.segment_var.get(), "Segment"),
+            (self.dcr_var.get(), "DCR"),
+            (self.semaine_var.get(), "Semaine"),
+            (self.type_var.get(), "Type")
+        ]
+
+        for value, name in filter_labels:
+            if value:
+                active_filters.append(f"{name}={value}")
+
+        if self.use_date_filter.get():
+            date_debut = self.date_debut_filter.get_date().strftime('%Y-%m-%d')
+            date_fin = self.date_fin_filter.get_date().strftime('%Y-%m-%d')
+            active_filters.append(f"Date: {date_debut} → {date_fin}")
+
+        if active_filters:
+            self.active_filters_label.config(
+                text=" | ".join(active_filters),
+                foreground='#0066cc'
+            )
+        else:
+            self.active_filters_label.config(
+                text="Aucun filtre actif",
+                foreground='gray'
+            )
+
+    def update_histogram(self):
+        """Mettre à jour l'histogramme d'évolution par Date_debut"""
+        self.ax.clear()
+
+        if self.filtered_df is None or self.filtered_df.empty:
+            self.ax.text(0.5, 0.5, 'Aucune donnée', ha='center', va='center', fontsize=12)
+            self.canvas.draw()
+            return
+
+        if "Date_debut" not in self.filtered_df.columns or "NbInteractions" not in self.filtered_df.columns:
+            self.ax.text(0.5, 0.5, 'Colonnes manquantes', ha='center', va='center', fontsize=12)
+            self.canvas.draw()
+            return
+
+        # Préparer les données
+        df_chart = self.filtered_df.copy()
+        df_chart["Date_debut"] = pd.to_datetime(df_chart["Date_debut"], errors='coerce')
+        df_chart = df_chart.dropna(subset=["Date_debut"])
+
+        if df_chart.empty:
+            self.ax.text(0.5, 0.5, 'Aucune date valide', ha='center', va='center', fontsize=12)
+            self.canvas.draw()
+            return
+
+        # Agréger par date
+        grouped = df_chart.groupby("Date_debut")["NbInteractions"].sum().reset_index()
+        grouped = grouped.sort_values("Date_debut")
+
+        # Créer l'histogramme
+        dates = grouped["Date_debut"].dt.strftime('%Y-%m-%d')
+        values = grouped["NbInteractions"]
+
+        bars = self.ax.bar(dates, values, color='#4CAF50', edgecolor='#2E7D32')
+
+        # Ajouter les valeurs sur les barres
+        for bar, val in zip(bars, values):
+            height = bar.get_height()
+            self.ax.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{int(val)}', ha='center', va='bottom', fontsize=8)
+
+        self.ax.set_xlabel('Date début', fontsize=9)
+        self.ax.set_ylabel('NbInteractions', fontsize=9)
+        self.ax.tick_params(axis='x', rotation=45, labelsize=8)
+        self.ax.tick_params(axis='y', labelsize=8)
+
+        self.fig.tight_layout()
+        self.canvas.draw()
 
     def update_treeview(self):
         # Effacer les données existantes
