@@ -630,25 +630,45 @@ class CSVImportApp:
             messagebox.showinfo("OK", f"Exporté: {file_path}")
 
     def import_keys(self):
-        """Importer les clés depuis un fichier JSON"""
-        file_path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        """Importer les clés depuis un fichier Excel"""
+        file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx"), ("JSON files", "*.json")])
         if file_path:
             try:
-                with open(file_path, 'r') as f:
-                    self.distribution_keys = json.load(f)
+                if file_path.endswith('.xlsx'):
+                    # Lire toutes les feuilles Excel
+                    xlsx = pd.ExcelFile(file_path, engine='openpyxl')
+                    self.distribution_keys = {}
+                    for sheet_name in xlsx.sheet_names:
+                        df = pd.read_excel(xlsx, sheet_name=sheet_name)
+                        if len(df.columns) >= 2:
+                            key_dict = dict(zip(df.iloc[:, 0].astype(str), df.iloc[:, 1]))
+                            self.distribution_keys[sheet_name] = key_dict
+                else:
+                    with open(file_path, 'r') as f:
+                        self.distribution_keys = json.load(f)
                 self.refresh_keys_display()
                 messagebox.showinfo("OK", "Clés importées")
             except Exception as e:
                 messagebox.showerror("Erreur", str(e))
 
     def export_keys(self):
-        """Exporter les clés vers un fichier JSON"""
-        file_path = filedialog.asksaveasfilename(defaultextension=".json",
-                                                  filetypes=[("JSON files", "*.json")])
+        """Exporter les clés vers un fichier Excel"""
+        file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
+                                                  filetypes=[("Excel files", "*.xlsx"), ("JSON files", "*.json")])
         if file_path:
-            with open(file_path, 'w') as f:
-                json.dump(self.distribution_keys, f, indent=2)
-            messagebox.showinfo("OK", f"Clés exportées: {file_path}")
+            try:
+                if file_path.endswith('.xlsx'):
+                    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                        for key_name, key_data in self.distribution_keys.items():
+                            if isinstance(key_data, dict):
+                                df = pd.DataFrame(list(key_data.items()), columns=['Element', 'Cle'])
+                                df.to_excel(writer, sheet_name=key_name[:31], index=False)
+                else:
+                    with open(file_path, 'w') as f:
+                        json.dump(self.distribution_keys, f, indent=2)
+                messagebox.showinfo("OK", f"Clés exportées: {file_path}")
+            except Exception as e:
+                messagebox.showerror("Erreur", str(e))
 
     def import_keys_from_selection(self):
         """Calculer les clés depuis la sélection actuelle"""
