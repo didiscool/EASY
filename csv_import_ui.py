@@ -97,19 +97,16 @@ class CSVImportApp:
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        # Onglet 1: Visualisation
+        # Onglets
         self.tab_viz = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_viz, text="Visualisation")
 
-        # Onglet 2: Sélection & Modifications
         self.tab_edit = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_edit, text="Sélection & Modifications")
 
-        # Onglet 3: Clés de répartition
         self.tab_keys = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_keys, text="Clés de répartition")
 
-        # Onglet 4: Construction
         self.tab_construct = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_construct, text="Construction")
 
@@ -119,45 +116,72 @@ class CSVImportApp:
         self.setup_construct_tab()
 
     def setup_viz_tab(self):
-        """Visualisation avec histogramme et tableau complet"""
+        """Visualisation avec panel complet de graphiques"""
         paned = ttk.PanedWindow(self.tab_viz, orient=tk.VERTICAL)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        # Haut: Résumé + Histogramme
+        # Haut: Contrôles + Graphique
         top_pane = ttk.Frame(paned)
-        paned.add(top_pane, weight=1)
+        paned.add(top_pane, weight=2)
 
-        # Résumé
-        left_frame = ttk.LabelFrame(top_pane, text="Résumé par Type", padding="5")
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 3))
+        # Contrôles de visualisation
+        control_frame = ttk.LabelFrame(top_pane, text="Type de visualisation", padding="5")
+        control_frame.pack(fill=tk.X, pady=(0, 5))
 
-        self.summary_tree = ttk.Treeview(left_frame, columns=("Type", "Total"), show="headings", height=5)
-        self.summary_tree.heading("Type", text="Type")
-        self.summary_tree.heading("Total", text="Total")
-        self.summary_tree.column("Type", width=80)
-        self.summary_tree.column("Total", width=80)
-        self.summary_tree.pack(fill=tk.BOTH, expand=True)
+        self.viz_type = tk.StringVar(value="stacked_bar")
+        viz_types = [
+            ("Barres empilées", "stacked_bar"),
+            ("Lignes", "line"),
+            ("Aires", "area"),
+            ("Camembert", "pie"),
+            ("Barres groupées", "grouped_bar"),
+            ("Cumulatif", "cumulative"),
+            ("Heatmap", "heatmap"),
+        ]
+        for text, val in viz_types:
+            ttk.Radiobutton(control_frame, text=text, variable=self.viz_type,
+                           value=val, command=self.update_visualization).pack(side=tk.LEFT, padx=5)
 
-        self.total_label = ttk.Label(left_frame, text="Total: 0", font=('TkDefaultFont', 9, 'bold'))
-        self.total_label.pack(anchor=tk.E)
+        # Résumé rapide
+        summary_frame = ttk.Frame(control_frame)
+        summary_frame.pack(side=tk.RIGHT, padx=10)
+        self.total_label = ttk.Label(summary_frame, text="Total: 0", font=('TkDefaultFont', 10, 'bold'))
+        self.total_label.pack()
 
-        # Histogramme
-        right_frame = ttk.LabelFrame(top_pane, text="Évolution par Date (par Type)", padding="5")
-        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Graphique
+        chart_frame = ttk.Frame(top_pane)
+        chart_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.fig = Figure(figsize=(7, 3), dpi=85)
+        self.fig = Figure(figsize=(12, 5), dpi=85)
         self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=right_frame)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # Bas: Tableau complet
-        bottom_pane = ttk.LabelFrame(paned, text="Données complètes", padding="3")
+        # Bas: Tableau + Résumé
+        bottom_pane = ttk.Frame(paned)
         paned.add(bottom_pane, weight=1)
 
-        tree_frame = ttk.Frame(bottom_pane)
+        # Résumé par Type
+        left_bottom = ttk.LabelFrame(bottom_pane, text="Résumé par Type", padding="3")
+        left_bottom.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 3))
+
+        self.summary_tree = ttk.Treeview(left_bottom, columns=("Type", "Total", "%"), show="headings", height=6)
+        self.summary_tree.heading("Type", text="Type")
+        self.summary_tree.heading("Total", text="Total")
+        self.summary_tree.heading("%", text="%")
+        self.summary_tree.column("Type", width=80)
+        self.summary_tree.column("Total", width=80)
+        self.summary_tree.column("%", width=50)
+        self.summary_tree.pack(fill=tk.BOTH, expand=True)
+
+        # Tableau complet
+        right_bottom = ttk.LabelFrame(bottom_pane, text="Données", padding="3")
+        right_bottom.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        tree_frame = ttk.Frame(right_bottom)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.viz_tree = ttk.Treeview(tree_frame, columns=self.columns, show="headings", height=8)
+        self.viz_tree = ttk.Treeview(tree_frame, columns=self.columns, show="headings", height=6)
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.viz_tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.viz_tree.xview)
         self.viz_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -170,17 +194,17 @@ class CSVImportApp:
 
         for col in self.columns:
             self.viz_tree.heading(col, text=col)
-            self.viz_tree.column(col, width=75, minwidth=50)
+            self.viz_tree.column(col, width=70, minwidth=50)
 
-        self.row_count_label = ttk.Label(bottom_pane, text="0 lignes")
+        self.row_count_label = ttk.Label(right_bottom, text="0 lignes")
         self.row_count_label.pack(anchor=tk.E)
 
     def setup_edit_tab(self):
-        """Sélection & Modifications avec toutes les colonnes"""
+        """Sélection & Modifications"""
         paned = ttk.PanedWindow(self.tab_edit, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        # Gauche: Tableau avec checkboxes
+        # Gauche: Tableau
         left_pane = ttk.Frame(paned)
         paned.add(left_pane, weight=3)
 
@@ -192,11 +216,10 @@ class CSVImportApp:
         ttk.Button(btn_frame, text="Tout", command=self.check_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="Rien", command=self.uncheck_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="Inverser", command=self.invert_check).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Importer clés sélection", command=self.import_keys_from_selection).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Clés depuis sélection", command=self.import_keys_from_selection).pack(side=tk.LEFT, padx=5)
         self.selection_count_label = ttk.Label(btn_frame, text="0/0", font=('TkDefaultFont', 9, 'bold'))
         self.selection_count_label.pack(side=tk.RIGHT, padx=5)
 
-        # Treeview avec checkboxes (toutes les colonnes)
         table_frame = ttk.Frame(left_pane)
         table_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -225,7 +248,6 @@ class CSVImportApp:
         right_pane = ttk.Frame(paned)
         paned.add(right_pane, weight=1)
 
-        # Mode
         mode_frame = ttk.LabelFrame(right_pane, text="Modification", padding="5")
         mode_frame.pack(fill=tk.X, pady=(0, 3))
 
@@ -253,7 +275,6 @@ class CSVImportApp:
         self.absolute_value_var.trace('w', lambda *args: self.update_preview())
         ttk.Entry(self.absolute_frame, textvariable=self.absolute_value_var, width=8).pack(side=tk.LEFT, padx=3)
 
-        # Aperçu
         preview_frame = ttk.LabelFrame(right_pane, text="Aperçu", padding="5")
         preview_frame.pack(fill=tk.X, pady=(0, 3))
 
@@ -264,7 +285,6 @@ class CSVImportApp:
         self.diff_label = ttk.Label(preview_frame, text="DIFF: -")
         self.diff_label.pack(anchor=tk.W)
 
-        # Détail
         detail_frame = ttk.LabelFrame(right_pane, text="Détail", padding="3")
         detail_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 3))
 
@@ -275,7 +295,6 @@ class CSVImportApp:
             self.detail_tree.column(col, width=w)
         self.detail_tree.pack(fill=tk.BOTH, expand=True)
 
-        # Actions
         action_frame = ttk.Frame(right_pane)
         action_frame.pack(fill=tk.X)
         ttk.Button(action_frame, text="APPLIQUER", command=self.apply_modification).pack(fill=tk.X, pady=1)
@@ -287,8 +306,7 @@ class CSVImportApp:
         self.on_mode_change()
 
     def setup_keys_tab(self):
-        """Onglet des clés de répartition"""
-        # Notebook interne pour les différents types de clés
+        """Clés de répartition"""
         keys_notebook = ttk.Notebook(self.tab_keys)
         keys_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -300,49 +318,32 @@ class CSVImportApp:
         # Clé par Type
         self.type_keys_frame = ttk.Frame(keys_notebook)
         keys_notebook.add(self.type_keys_frame, text="Par Type")
-        self.setup_type_keys()
+        self.setup_simple_keys(self.type_keys_frame, "type_keys_tree")
 
-        # Clé SegmentMacro dans Type
-        self.segmacro_keys_frame = ttk.Frame(keys_notebook)
-        keys_notebook.add(self.segmacro_keys_frame, text="SegMacro/Type")
-        self.setup_hierarchical_keys(self.segmacro_keys_frame, "segmacro_type")
+        # Autres clés
+        for name, label in [
+            ("segmacro_type", "SegMacro/Type"),
+            ("segment_segmacro", "Seg/SegMacro"),
+            ("dcr", "DCR"),
+            ("file", "File"),
+            ("offre", "Offre")
+        ]:
+            frame = ttk.Frame(keys_notebook)
+            keys_notebook.add(frame, text=label)
+            self.setup_hierarchical_keys(frame, name)
 
-        # Clé Segment dans SegmentMacro
-        self.segment_keys_frame = ttk.Frame(keys_notebook)
-        keys_notebook.add(self.segment_keys_frame, text="Seg/SegMacro")
-        self.setup_hierarchical_keys(self.segment_keys_frame, "segment_segmacro")
-
-        # Clé DCR
-        self.dcr_keys_frame = ttk.Frame(keys_notebook)
-        keys_notebook.add(self.dcr_keys_frame, text="DCR")
-        self.setup_hierarchical_keys(self.dcr_keys_frame, "dcr")
-
-        # Clé File
-        self.file_keys_frame = ttk.Frame(keys_notebook)
-        keys_notebook.add(self.file_keys_frame, text="File")
-        self.setup_hierarchical_keys(self.file_keys_frame, "file")
-
-        # Clé Offre
-        self.offre_keys_frame = ttk.Frame(keys_notebook)
-        keys_notebook.add(self.offre_keys_frame, text="Offre")
-        self.setup_hierarchical_keys(self.offre_keys_frame, "offre")
-
-        # Boutons calcul
         btn_frame = ttk.Frame(self.tab_keys)
         btn_frame.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(btn_frame, text="Calculer toutes les clés depuis les données",
-                  command=self.calculate_all_keys).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Réinitialiser les clés", command=self.reset_keys).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Calculer clés depuis données", command=self.calculate_all_keys).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Réinitialiser", command=self.reset_keys).pack(side=tk.LEFT, padx=5)
 
     def setup_temporal_keys(self):
-        """Configuration des clés temporelles"""
-        ttk.Label(self.temporal_frame, text="Pas temporel:", font=('TkDefaultFont', 10, 'bold')).pack(anchor=tk.W, pady=5)
+        ttk.Label(self.temporal_frame, text="Pas:", font=('TkDefaultFont', 10, 'bold')).pack(anchor=tk.W, pady=5)
 
-        self.temporal_step = tk.StringVar(value="semaine")
-        for text, val in [("Semaine", "semaine"), ("Jour", "jour"), ("Créneau (30min)", "creneau")]:
+        self.temporal_step = tk.StringVar(value="jour")
+        for text, val in [("Semaine", "semaine"), ("Jour", "jour"), ("Créneau", "creneau")]:
             ttk.Radiobutton(self.temporal_frame, text=text, variable=self.temporal_step, value=val).pack(anchor=tk.W)
 
-        # Treeview pour les clés temporelles
         tree_frame = ttk.Frame(self.temporal_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, pady=10)
 
@@ -356,30 +357,26 @@ class CSVImportApp:
         self.temporal_tree.configure(yscrollcommand=scroll.set)
         self.temporal_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Double-clic pour éditer
         self.temporal_tree.bind('<Double-1>', lambda e: self.edit_key_value(self.temporal_tree))
 
-    def setup_type_keys(self):
-        """Configuration des clés par type"""
-        tree_frame = ttk.Frame(self.type_keys_frame)
+    def setup_simple_keys(self, frame, tree_name):
+        tree_frame = ttk.Frame(frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, pady=10, padx=5)
 
-        self.type_keys_tree = ttk.Treeview(tree_frame, columns=("Type", "Cle"), show="headings", height=10)
-        self.type_keys_tree.heading("Type", text="Type")
-        self.type_keys_tree.heading("Cle", text="Clé (%)")
-        self.type_keys_tree.column("Type", width=150)
-        self.type_keys_tree.column("Cle", width=100)
+        tree = ttk.Treeview(tree_frame, columns=("Item", "Cle"), show="headings", height=10)
+        tree.heading("Item", text="Élément")
+        tree.heading("Cle", text="Clé (%)")
+        tree.column("Item", width=150)
+        tree.column("Cle", width=100)
 
-        scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.type_keys_tree.yview)
-        self.type_keys_tree.configure(yscrollcommand=scroll.set)
-        self.type_keys_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.type_keys_tree.bind('<Double-1>', lambda e: self.edit_key_value(self.type_keys_tree))
+        tree.bind('<Double-1>', lambda e: self.edit_key_value(tree))
+        setattr(self, tree_name, tree)
 
     def setup_hierarchical_keys(self, frame, key_type):
-        """Configuration des clés hiérarchiques génériques"""
         tree_frame = ttk.Frame(frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, pady=10, padx=5)
 
@@ -395,24 +392,23 @@ class CSVImportApp:
         tree.configure(yscrollcommand=scroll.set)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
         tree.bind('<Double-1>', lambda e: self.edit_key_value(tree))
         setattr(self, f"{key_type}_tree", tree)
 
     def setup_construct_tab(self):
-        """Onglet de construction de nouvelles lignes"""
-        # Paramètres de construction
-        params_frame = ttk.LabelFrame(self.tab_construct, text="Paramètres de construction", padding="10")
+        """Construction de nouvelles lignes"""
+        # Paramètres
+        params_frame = ttk.LabelFrame(self.tab_construct, text="Paramètres", padding="10")
         params_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # Global
         row1 = ttk.Frame(params_frame)
         row1.pack(fill=tk.X, pady=3)
-        ttk.Label(row1, text="NbInteractions Global:").pack(side=tk.LEFT)
-        self.global_interactions = tk.StringVar(value="1000")
-        ttk.Entry(row1, textvariable=self.global_interactions, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Label(row1, text="NbInteractions Global:", font=('TkDefaultFont', 10, 'bold')).pack(side=tk.LEFT)
+        self.global_interactions = tk.StringVar(value="10000")
+        ttk.Entry(row1, textvariable=self.global_interactions, width=12).pack(side=tk.LEFT, padx=5)
 
-        # Pas temporel
+        # Pas
         row2 = ttk.Frame(params_frame)
         row2.pack(fill=tk.X, pady=3)
         ttk.Label(row2, text="Pas:").pack(side=tk.LEFT)
@@ -430,71 +426,77 @@ class CSVImportApp:
         self.construct_date_fin = DateEntry(row3, width=10, date_pattern='yyyy-mm-dd')
         self.construct_date_fin.pack(side=tk.LEFT, padx=5)
 
-        # Créneaux
+        # Heures (pour créneaux)
         row4 = ttk.Frame(params_frame)
         row4.pack(fill=tk.X, pady=3)
-        ttk.Label(row4, text="Heure début:").pack(side=tk.LEFT)
+        ttk.Label(row4, text="Heures (créneaux):").pack(side=tk.LEFT)
         self.construct_hour_start = tk.StringVar(value="08:00")
-        ttk.Entry(row4, textvariable=self.construct_hour_start, width=6).pack(side=tk.LEFT, padx=5)
-        ttk.Label(row4, text="Heure fin:").pack(side=tk.LEFT)
+        ttk.Entry(row4, textvariable=self.construct_hour_start, width=6).pack(side=tk.LEFT, padx=3)
+        ttk.Label(row4, text="à").pack(side=tk.LEFT)
         self.construct_hour_end = tk.StringVar(value="18:00")
-        ttk.Entry(row4, textvariable=self.construct_hour_end, width=6).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(row4, textvariable=self.construct_hour_end, width=6).pack(side=tk.LEFT, padx=3)
 
-        # Jours inclus
+        # Jours
         row5 = ttk.Frame(params_frame)
         row5.pack(fill=tk.X, pady=3)
         ttk.Label(row5, text="Jours:").pack(side=tk.LEFT)
         self.days_included = {}
         for i, day in enumerate(["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]):
-            self.days_included[i] = tk.BooleanVar(value=i < 5)  # Lun-Ven par défaut
+            self.days_included[i] = tk.BooleanVar(value=i < 5)
             ttk.Checkbutton(row5, text=day, variable=self.days_included[i]).pack(side=tk.LEFT, padx=2)
 
+        # Formule
+        formula_frame = ttk.LabelFrame(self.tab_construct, text="Formule de calcul", padding="5")
+        formula_frame.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(formula_frame, text="NbInteractions = Global × Clé_Temporelle × Clé_Type × Clé_SegMacro × Clé_Segment × Clé_DCR × Clé_File × Clé_Offre",
+                 font=('TkDefaultFont', 9, 'italic')).pack()
+
         # Définitions hiérarchiques
-        def_frame = ttk.LabelFrame(self.tab_construct, text="Définitions hiérarchiques", padding="5")
+        def_frame = ttk.LabelFrame(self.tab_construct, text="Définitions (valeurs à générer)", padding="5")
         def_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Notebook pour les définitions
         def_notebook = ttk.Notebook(def_frame)
         def_notebook.pack(fill=tk.BOTH, expand=True)
 
-        # SegmentMacro
-        self.def_segmacro_frame = ttk.Frame(def_notebook)
-        def_notebook.add(self.def_segmacro_frame, text="SegmentMacro")
-        self.setup_definition_list(self.def_segmacro_frame, "segmacro")
+        for name, label in [
+            ("segmacro", "SegmentMacro"),
+            ("segment", "Segment"),
+            ("file_def", "File"),
+            ("dcr_def", "DCR"),
+            ("offre_def", "Offre"),
+            ("type_def", "Type")
+        ]:
+            frame = ttk.Frame(def_notebook)
+            def_notebook.add(frame, text=label)
+            self.setup_definition_list(frame, name)
 
-        # Segments
-        self.def_segment_frame = ttk.Frame(def_notebook)
-        def_notebook.add(self.def_segment_frame, text="Segment")
-        self.setup_definition_list(self.def_segment_frame, "segment")
-
-        # Files
-        self.def_file_frame = ttk.Frame(def_notebook)
-        def_notebook.add(self.def_file_frame, text="File")
-        self.setup_definition_list(self.def_file_frame, "file_def")
-
-        # DCR
-        self.def_dcr_frame = ttk.Frame(def_notebook)
-        def_notebook.add(self.def_dcr_frame, text="DCR")
-        self.setup_definition_list(self.def_dcr_frame, "dcr_def")
-
-        # Offre
-        self.def_offre_frame = ttk.Frame(def_notebook)
-        def_notebook.add(self.def_offre_frame, text="Offre")
-        self.setup_definition_list(self.def_offre_frame, "offre_def")
-
-        # Type
-        self.def_type_frame = ttk.Frame(def_notebook)
-        def_notebook.add(self.def_type_frame, text="Type")
-        self.setup_definition_list(self.def_type_frame, "type_def")
-
-        # Bouton construction
+        # Boutons et aperçu
         btn_frame = ttk.Frame(self.tab_construct)
         btn_frame.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(btn_frame, text="CONSTRUIRE LES LIGNES", command=self.construct_rows).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Aperçu", command=self.preview_construction).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="APERÇU", command=self.preview_construction).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="CONSTRUIRE", command=self.construct_rows).pack(side=tk.LEFT, padx=5)
+        self.construct_info = ttk.Label(btn_frame, text="", foreground='#0066cc')
+        self.construct_info.pack(side=tk.LEFT, padx=10)
+
+        # Aperçu des lignes construites
+        preview_frame = ttk.LabelFrame(self.tab_construct, text="Aperçu des lignes à construire", padding="3")
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.construct_preview_tree = ttk.Treeview(preview_frame,
+            columns=self.columns, show="headings", height=8)
+
+        c_vsb = ttk.Scrollbar(preview_frame, orient="vertical", command=self.construct_preview_tree.yview)
+        c_hsb = ttk.Scrollbar(preview_frame, orient="horizontal", command=self.construct_preview_tree.xview)
+        self.construct_preview_tree.configure(yscrollcommand=c_vsb.set, xscrollcommand=c_hsb.set)
+
+        self.construct_preview_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        c_vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        for col in self.columns:
+            self.construct_preview_tree.heading(col, text=col)
+            self.construct_preview_tree.column(col, width=70, minwidth=50)
 
     def setup_definition_list(self, frame, list_name):
-        """Créer une liste de définition avec ajout/suppression"""
         top_frame = ttk.Frame(frame)
         top_frame.pack(fill=tk.X, pady=3)
 
@@ -503,23 +505,21 @@ class CSVImportApp:
         setattr(self, f"{list_name}_entry", entry_var)
         ttk.Entry(top_frame, textvariable=entry_var, width=15).pack(side=tk.LEFT, padx=3)
 
-        ttk.Label(top_frame, text="Parent:").pack(side=tk.LEFT)
-        parent_var = tk.StringVar()
-        setattr(self, f"{list_name}_parent", parent_var)
-        parent_combo = ttk.Combobox(top_frame, textvariable=parent_var, width=12)
-        setattr(self, f"{list_name}_parent_combo", parent_combo)
-        parent_combo.pack(side=tk.LEFT, padx=3)
+        if list_name != "segmacro" and list_name != "type_def":
+            ttk.Label(top_frame, text="Parent:").pack(side=tk.LEFT)
+            parent_var = tk.StringVar()
+            setattr(self, f"{list_name}_parent", parent_var)
+            parent_combo = ttk.Combobox(top_frame, textvariable=parent_var, width=12)
+            setattr(self, f"{list_name}_parent_combo", parent_combo)
+            parent_combo.pack(side=tk.LEFT, padx=3)
 
-        ttk.Button(top_frame, text="Ajouter",
-                  command=lambda: self.add_definition(list_name)).pack(side=tk.LEFT, padx=3)
-        ttk.Button(top_frame, text="Supprimer",
-                  command=lambda: self.remove_definition(list_name)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(top_frame, text="+", command=lambda: self.add_definition(list_name), width=3).pack(side=tk.LEFT, padx=2)
+        ttk.Button(top_frame, text="-", command=lambda: self.remove_definition(list_name), width=3).pack(side=tk.LEFT, padx=2)
 
-        # Listbox
         list_frame = ttk.Frame(frame)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=3)
 
-        listbox = tk.Listbox(list_frame, height=8)
+        listbox = tk.Listbox(list_frame, height=6)
         scroll = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
         listbox.configure(yscrollcommand=scroll.set)
         listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -527,34 +527,345 @@ class CSVImportApp:
         setattr(self, f"{list_name}_listbox", listbox)
 
     def add_definition(self, list_name):
-        """Ajouter une définition"""
         entry_var = getattr(self, f"{list_name}_entry")
-        parent_var = getattr(self, f"{list_name}_parent")
         listbox = getattr(self, f"{list_name}_listbox")
-
         value = entry_var.get().strip()
-        parent = parent_var.get().strip()
 
         if value:
-            if parent:
-                listbox.insert(tk.END, f"{value} ({parent})")
+            parent_var = getattr(self, f"{list_name}_parent", None)
+            if parent_var and parent_var.get():
+                listbox.insert(tk.END, f"{value} ({parent_var.get()})")
             else:
                 listbox.insert(tk.END, value)
             entry_var.set("")
 
     def remove_definition(self, list_name):
-        """Supprimer une définition"""
         listbox = getattr(self, f"{list_name}_listbox")
-        selection = listbox.curselection()
-        if selection:
-            listbox.delete(selection[0])
+        sel = listbox.curselection()
+        if sel:
+            listbox.delete(sel[0])
 
+    def generate_time_periods(self):
+        """Générer les périodes temporelles selon le pas choisi"""
+        try:
+            start = self.construct_date_debut.get_date()
+            end = self.construct_date_fin.get_date()
+        except:
+            return []
+
+        periods = []
+        step = self.construct_step.get()
+
+        if step == "semaine":
+            current = start
+            while current <= end:
+                week_num = current.isocalendar()[1]
+                year = current.year
+                periods.append(f"S{week_num:02d}-{year}")
+                current += timedelta(days=7)
+
+        elif step == "jour":
+            current = start
+            while current <= end:
+                if self.days_included.get(current.weekday(), tk.BooleanVar(value=True)).get():
+                    periods.append(current.strftime('%Y-%m-%d'))
+                current += timedelta(days=1)
+
+        elif step == "creneau":
+            try:
+                h_start = int(self.construct_hour_start.get().split(':')[0])
+                h_end = int(self.construct_hour_end.get().split(':')[0])
+            except:
+                h_start, h_end = 8, 18
+
+            current = start
+            while current <= end:
+                if self.days_included.get(current.weekday(), tk.BooleanVar(value=True)).get():
+                    for hour in range(h_start, h_end):
+                        for minute in [0, 30]:
+                            periods.append(f"{current.strftime('%Y-%m-%d')} {hour:02d}:{minute:02d}")
+                current += timedelta(days=1)
+
+        return periods
+
+    def get_list_items(self, list_name):
+        """Récupérer les éléments d'une listbox"""
+        listbox = getattr(self, f"{list_name}_listbox", None)
+        if not listbox:
+            return []
+        return [listbox.get(i) for i in range(listbox.size())]
+
+    def preview_construction(self):
+        """Aperçu de la construction"""
+        rows = self.build_construction_rows()
+
+        # Effacer aperçu précédent
+        for item in self.construct_preview_tree.get_children():
+            self.construct_preview_tree.delete(item)
+
+        # Afficher les 100 premières lignes
+        for row in rows[:100]:
+            values = [row.get(col, "") for col in self.columns]
+            self.construct_preview_tree.insert("", tk.END, values=values)
+
+        total = sum(r.get("NbInteractions", 0) for r in rows)
+        self.construct_info.config(text=f"{len(rows)} lignes, Total: {total:,.0f}")
+
+    def build_construction_rows(self):
+        """Construire les lignes selon la formule"""
+        try:
+            global_val = float(self.global_interactions.get())
+        except:
+            return []
+
+        # Récupérer les définitions
+        segmacros = self.get_list_items("segmacro") or ["Default"]
+        segments = self.get_list_items("segment") or ["Default"]
+        files = self.get_list_items("file_def") or ["Default"]
+        dcrs = self.get_list_items("dcr_def") or ["Default"]
+        offres = self.get_list_items("offre_def") or ["Default"]
+        types = self.get_list_items("type_def") or ["Default"]
+
+        # Générer périodes
+        periods = self.generate_time_periods()
+        if not periods:
+            periods = ["Default"]
+
+        # Récupérer les clés (avec valeurs par défaut uniformes)
+        temporal_keys = self.distribution_keys.get("temporal", {})
+        type_keys = self.distribution_keys.get("type", {})
+        segmacro_keys = self.distribution_keys.get("segmacro_type", {})
+
+        # Normaliser les clés
+        n_periods = len(periods)
+        n_types = len(types)
+        n_segmacros = len(segmacros)
+        n_segments = len(segments)
+        n_dcrs = len(dcrs)
+        n_files = len(files)
+        n_offres = len(offres)
+
+        rows = []
+        step = self.construct_step.get()
+
+        for period in periods:
+            # Clé temporelle
+            key_temporal = temporal_keys.get(period, 100.0 / n_periods) / 100.0
+
+            for type_name in types:
+                # Clé type
+                key_type = type_keys.get(type_name, 100.0 / n_types) / 100.0
+
+                for segmacro in segmacros:
+                    # Clé segmacro dans type
+                    segmacro_dict = segmacro_keys.get(type_name, {})
+                    key_segmacro = segmacro_dict.get(segmacro, 100.0 / n_segmacros) / 100.0
+
+                    for segment in segments:
+                        key_segment = 1.0 / n_segments
+
+                        for dcr in dcrs:
+                            key_dcr = 1.0 / n_dcrs
+
+                            for file in files:
+                                key_file = 1.0 / n_files
+
+                                for offre in offres:
+                                    key_offre = 1.0 / n_offres
+
+                                    # Calcul final
+                                    nb = global_val * key_temporal * key_type * key_segmacro * key_segment * key_dcr * key_file * key_offre
+
+                                    # Déterminer la date
+                                    if step == "creneau":
+                                        date_str = period.split()[0]
+                                        creneau = period.split()[1] if ' ' in period else ""
+                                    else:
+                                        date_str = period if '-' in period else ""
+                                        creneau = ""
+
+                                    row = {
+                                        "SegmentMacro": segmacro.split(" (")[0],
+                                        "File": file.split(" (")[0],
+                                        "Segment": segment.split(" (")[0],
+                                        "DCR": dcr.split(" (")[0],
+                                        "Semaine": period if step == "semaine" else "",
+                                        "Offre": offre.split(" (")[0],
+                                        "NbInteractions": round(nb),
+                                        "Type": type_name,
+                                        "Date_debut": date_str,
+                                        "Date_fin": date_str,
+                                        "Pas": step,
+                                        "Creneau": creneau
+                                    }
+                                    rows.append(row)
+
+        return rows
+
+    def construct_rows(self):
+        """Construire et ajouter les lignes au DataFrame"""
+        rows = self.build_construction_rows()
+
+        if not rows:
+            messagebox.showwarning("Attention", "Aucune ligne à construire")
+            return
+
+        new_df = pd.DataFrame(rows)
+
+        if self.df is None:
+            self.df = new_df
+        else:
+            self.df = pd.concat([self.df, new_df], ignore_index=True)
+
+        self.filtered_df = self.df.copy()
+        self.assign_type_colors()
+        self.update_all_views()
+
+        total = sum(r.get("NbInteractions", 0) for r in rows)
+        messagebox.showinfo("OK", f"{len(rows)} lignes construites\nTotal: {total:,}")
+
+    # Visualisation
+    def update_visualization(self):
+        """Mettre à jour le graphique selon le type choisi"""
+        self.ax.clear()
+
+        if self.filtered_df is None or self.filtered_df.empty:
+            self.ax.text(0.5, 0.5, 'Aucune donnée', ha='center', va='center')
+            self.canvas.draw()
+            return
+
+        viz_type = self.viz_type.get()
+
+        if "Date_debut" not in self.filtered_df.columns:
+            self.canvas.draw()
+            return
+
+        df = self.filtered_df.copy()
+        df["Date_debut"] = pd.to_datetime(df["Date_debut"], errors='coerce')
+        df = df.dropna(subset=["Date_debut"])
+
+        if df.empty:
+            self.canvas.draw()
+            return
+
+        if viz_type == "stacked_bar":
+            self.draw_stacked_bar(df)
+        elif viz_type == "line":
+            self.draw_line_chart(df)
+        elif viz_type == "area":
+            self.draw_area_chart(df)
+        elif viz_type == "pie":
+            self.draw_pie_chart(df)
+        elif viz_type == "grouped_bar":
+            self.draw_grouped_bar(df)
+        elif viz_type == "cumulative":
+            self.draw_cumulative(df)
+        elif viz_type == "heatmap":
+            self.draw_heatmap(df)
+
+        self.fig.tight_layout()
+        self.canvas.draw()
+
+    def draw_stacked_bar(self, df):
+        pivot = df.groupby([df["Date_debut"].dt.strftime('%Y-%m-%d'), "Type"])["NbInteractions"].sum().unstack(fill_value=0)
+        dates = pivot.index.tolist()
+        bottom = np.zeros(len(dates))
+
+        for type_name in pivot.columns:
+            values = pivot[type_name].values
+            color = self.type_colors.get(type_name, '#888888')
+            self.ax.bar(dates, values, bottom=bottom, label=type_name, color=color)
+            bottom += values
+
+        self.ax.set_xlabel('Date')
+        self.ax.set_ylabel('Interactions')
+        self.ax.tick_params(axis='x', rotation=45, labelsize=7)
+        self.ax.legend(loc='upper right', fontsize=7)
+
+    def draw_line_chart(self, df):
+        for type_name in df["Type"].unique():
+            type_df = df[df["Type"] == type_name]
+            grouped = type_df.groupby(type_df["Date_debut"].dt.strftime('%Y-%m-%d'))["NbInteractions"].sum()
+            color = self.type_colors.get(type_name, '#888888')
+            self.ax.plot(grouped.index, grouped.values, marker='o', label=type_name, color=color, linewidth=2)
+
+        self.ax.set_xlabel('Date')
+        self.ax.set_ylabel('Interactions')
+        self.ax.tick_params(axis='x', rotation=45, labelsize=7)
+        self.ax.legend(loc='upper right', fontsize=7)
+        self.ax.grid(True, alpha=0.3)
+
+    def draw_area_chart(self, df):
+        pivot = df.groupby([df["Date_debut"].dt.strftime('%Y-%m-%d'), "Type"])["NbInteractions"].sum().unstack(fill_value=0)
+        dates = pivot.index.tolist()
+
+        colors = [self.type_colors.get(t, '#888888') for t in pivot.columns]
+        self.ax.stackplot(dates, [pivot[col].values for col in pivot.columns],
+                         labels=pivot.columns, colors=colors, alpha=0.8)
+
+        self.ax.set_xlabel('Date')
+        self.ax.set_ylabel('Interactions')
+        self.ax.tick_params(axis='x', rotation=45, labelsize=7)
+        self.ax.legend(loc='upper right', fontsize=7)
+
+    def draw_pie_chart(self, df):
+        summary = df.groupby("Type")["NbInteractions"].sum()
+        colors = [self.type_colors.get(t, '#888888') for t in summary.index]
+        self.ax.pie(summary.values, labels=summary.index, autopct='%1.1f%%', colors=colors)
+        self.ax.set_title('Répartition par Type')
+
+    def draw_grouped_bar(self, df):
+        pivot = df.groupby([df["Date_debut"].dt.strftime('%Y-%m-%d'), "Type"])["NbInteractions"].sum().unstack(fill_value=0)
+        dates = pivot.index.tolist()
+        n_types = len(pivot.columns)
+        width = 0.8 / n_types
+        x = np.arange(len(dates))
+
+        for i, type_name in enumerate(pivot.columns):
+            color = self.type_colors.get(type_name, '#888888')
+            self.ax.bar(x + i * width, pivot[type_name].values, width, label=type_name, color=color)
+
+        self.ax.set_xticks(x + width * (n_types - 1) / 2)
+        self.ax.set_xticklabels(dates, rotation=45, fontsize=7)
+        self.ax.set_xlabel('Date')
+        self.ax.set_ylabel('Interactions')
+        self.ax.legend(loc='upper right', fontsize=7)
+
+    def draw_cumulative(self, df):
+        for type_name in df["Type"].unique():
+            type_df = df[df["Type"] == type_name]
+            grouped = type_df.groupby(type_df["Date_debut"].dt.strftime('%Y-%m-%d'))["NbInteractions"].sum()
+            cumsum = grouped.cumsum()
+            color = self.type_colors.get(type_name, '#888888')
+            self.ax.plot(cumsum.index, cumsum.values, marker='o', label=type_name, color=color, linewidth=2)
+
+        self.ax.set_xlabel('Date')
+        self.ax.set_ylabel('Cumul Interactions')
+        self.ax.tick_params(axis='x', rotation=45, labelsize=7)
+        self.ax.legend(loc='upper left', fontsize=7)
+        self.ax.grid(True, alpha=0.3)
+
+    def draw_heatmap(self, df):
+        pivot = df.groupby([df["Date_debut"].dt.strftime('%Y-%m-%d'), "Type"])["NbInteractions"].sum().unstack(fill_value=0)
+
+        im = self.ax.imshow(pivot.T.values, aspect='auto', cmap='YlOrRd')
+        self.ax.set_xticks(np.arange(len(pivot.index)))
+        self.ax.set_yticks(np.arange(len(pivot.columns)))
+        self.ax.set_xticklabels(pivot.index, rotation=45, fontsize=7)
+        self.ax.set_yticklabels(pivot.columns, fontsize=8)
+        self.ax.set_xlabel('Date')
+        self.ax.set_ylabel('Type')
+
+        # Colorbar
+        cbar = self.fig.colorbar(im, ax=self.ax)
+        cbar.set_label('Interactions')
+
+    # Méthodes utilitaires existantes
     def on_tree_click(self, event):
-        """Gérer le clic sur le treeview pour toggle checkbox"""
         region = self.edit_tree.identify_region(event.x, event.y)
         if region == "cell":
             col = self.edit_tree.identify_column(event.x)
-            if col == "#1":  # Colonne Sel
+            if col == "#1":
                 item = self.edit_tree.identify_row(event.y)
                 if item:
                     idx = int(item)
@@ -565,7 +876,6 @@ class CSVImportApp:
                         self.update_preview()
 
     def update_edit_tree_selection(self):
-        """Mettre à jour l'affichage des checkboxes"""
         for item in self.edit_tree.get_children():
             idx = int(item)
             if idx in self.check_vars:
@@ -573,11 +883,6 @@ class CSVImportApp:
                 values = list(self.edit_tree.item(item)['values'])
                 values[0] = checked
                 self.edit_tree.item(item, values=values)
-
-    # ... (méthodes existantes conservées et adaptées)
-
-    def _on_mousewheel(self, event):
-        pass  # Géré par les treeviews
 
     def on_mode_change(self):
         if self.modify_mode.get() == "relative":
@@ -604,7 +909,6 @@ class CSVImportApp:
                     self.df = pd.read_excel(file_path, engine='openpyxl')
                 else:
                     self.df = pd.read_csv(file_path, sep=None, engine='python')
-                # Ajouter colonnes manquantes
                 for col in ["Pas", "Creneau"]:
                     if col not in self.df.columns:
                         self.df[col] = ""
@@ -630,12 +934,10 @@ class CSVImportApp:
             messagebox.showinfo("OK", f"Exporté: {file_path}")
 
     def import_keys(self):
-        """Importer les clés depuis un fichier Excel"""
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx"), ("JSON files", "*.json")])
         if file_path:
             try:
                 if file_path.endswith('.xlsx'):
-                    # Lire toutes les feuilles Excel
                     xlsx = pd.ExcelFile(file_path, engine='openpyxl')
                     self.distribution_keys = {}
                     for sheet_name in xlsx.sheet_names:
@@ -652,7 +954,6 @@ class CSVImportApp:
                 messagebox.showerror("Erreur", str(e))
 
     def export_keys(self):
-        """Exporter les clés vers un fichier Excel"""
         file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
                                                   filetypes=[("Excel files", "*.xlsx"), ("JSON files", "*.json")])
         if file_path:
@@ -671,37 +972,32 @@ class CSVImportApp:
                 messagebox.showerror("Erreur", str(e))
 
     def import_keys_from_selection(self):
-        """Calculer les clés depuis la sélection actuelle"""
         selected = self.get_selected_indices()
         if not selected:
             messagebox.showwarning("Attention", "Sélectionnez des lignes")
             return
-
         selected_df = self.df.loc[selected]
         self.calculate_keys_from_df(selected_df)
-        messagebox.showinfo("OK", "Clés calculées depuis la sélection")
+        messagebox.showinfo("OK", "Clés calculées depuis sélection")
 
     def calculate_all_keys(self):
-        """Calculer toutes les clés depuis les données filtrées"""
         if self.filtered_df is None:
             return
         self.calculate_keys_from_df(self.filtered_df)
         self.refresh_keys_display()
 
     def calculate_keys_from_df(self, df):
-        """Calculer les clés de répartition depuis un DataFrame"""
         if df.empty:
             return
-
         total = df["NbInteractions"].sum()
         if total == 0:
             return
 
-        # Clés par Type
+        # Type
         type_keys = df.groupby("Type")["NbInteractions"].sum() / total * 100
         self.distribution_keys["type"] = type_keys.to_dict()
 
-        # Clés temporelles
+        # Temporal
         if "Date_debut" in df.columns:
             df_temp = df.copy()
             df_temp["Date_debut"] = pd.to_datetime(df_temp["Date_debut"], errors='coerce')
@@ -709,7 +1005,7 @@ class CSVImportApp:
             temporal_keys = temporal_keys / total * 100
             self.distribution_keys["temporal"] = temporal_keys.to_dict()
 
-        # Clés SegmentMacro dans Type
+        # SegmentMacro dans Type
         if "SegmentMacro" in df.columns and "Type" in df.columns:
             keys = {}
             for type_name in df["Type"].unique():
@@ -720,12 +1016,10 @@ class CSVImportApp:
                     keys[type_name] = segmacro_keys.to_dict()
             self.distribution_keys["segmacro_type"] = keys
 
-        # Autres clés hiérarchiques...
         self.refresh_keys_display()
 
     def refresh_keys_display(self):
-        """Rafraîchir l'affichage des clés"""
-        # Temporel
+        # Temporal
         for item in self.temporal_tree.get_children():
             self.temporal_tree.delete(item)
         if "temporal" in self.distribution_keys:
@@ -740,28 +1034,23 @@ class CSVImportApp:
                 self.type_keys_tree.insert("", tk.END, values=(type_name, f"{key:.2f}"))
 
     def reset_keys(self):
-        """Réinitialiser les clés"""
         self.distribution_keys = {}
         self.refresh_keys_display()
 
     def edit_key_value(self, tree):
-        """Éditer une valeur de clé"""
-        selection = tree.selection()
-        if not selection:
+        sel = tree.selection()
+        if not sel:
             return
-
-        item = selection[0]
+        item = sel[0]
         values = tree.item(item)['values']
 
-        # Dialog simple pour éditer
         dialog = tk.Toplevel(self.root)
-        dialog.title("Modifier la clé")
-        dialog.geometry("250x100")
+        dialog.title("Modifier")
+        dialog.geometry("200x80")
 
-        ttk.Label(dialog, text="Nouvelle valeur (%):").pack(pady=5)
         entry = ttk.Entry(dialog)
         entry.insert(0, values[-1])
-        entry.pack(pady=5)
+        entry.pack(pady=10)
 
         def save():
             try:
@@ -773,32 +1062,13 @@ class CSVImportApp:
             except:
                 pass
 
-        ttk.Button(dialog, text="OK", command=save).pack(pady=5)
-
-    def construct_rows(self):
-        """Construire les nouvelles lignes"""
-        try:
-            global_val = float(self.global_interactions.get())
-        except:
-            messagebox.showerror("Erreur", "Valeur globale invalide")
-            return
-
-        # Récupérer les définitions
-        rows = []
-
-        # Exemple simplifié - à développer selon les besoins
-        messagebox.showinfo("Info", "Construction en cours de développement")
-
-    def preview_construction(self):
-        """Aperçu de la construction"""
-        messagebox.showinfo("Aperçu", "Aperçu en cours de développement")
+        ttk.Button(dialog, text="OK", command=save).pack()
 
     def assign_type_colors(self):
         if self.df is None or "Type" not in self.df.columns:
             return
         types = self.df["Type"].dropna().unique()
-        self.type_colors = {t: self.color_palette[i % len(self.color_palette)]
-                           for i, t in enumerate(types)}
+        self.type_colors = {t: self.color_palette[i % len(self.color_palette)] for i, t in enumerate(types)}
 
     def populate_filters(self):
         if self.df is None:
@@ -863,7 +1133,7 @@ class CSVImportApp:
     def update_all_views(self):
         self.update_viz_table()
         self.update_summary()
-        self.update_histogram()
+        self.update_visualization()
         self.update_edit_table()
         self.update_preview()
         self.update_history_label()
@@ -880,7 +1150,6 @@ class CSVImportApp:
         self.row_count_label.config(text=f"{len(self.filtered_df)} lignes")
 
     def update_edit_table(self):
-        """Mettre à jour le tableau d'édition avec toutes les colonnes"""
         for item in self.edit_tree.get_children():
             self.edit_tree.delete(item)
         if self.filtered_df is None:
@@ -889,12 +1158,28 @@ class CSVImportApp:
         for idx, row in self.filtered_df.iterrows():
             if idx not in self.check_vars:
                 self.check_vars[idx] = tk.BooleanVar(value=False)
-
             checked = "✓" if self.check_vars[idx].get() else ""
             values = [checked] + [row.get(col, "") for col in self.columns]
             self.edit_tree.insert("", tk.END, iid=idx, values=values)
 
         self.update_selection_count()
+
+    def update_summary(self):
+        for item in self.summary_tree.get_children():
+            self.summary_tree.delete(item)
+        if self.filtered_df is None:
+            self.total_label.config(text="Total: 0")
+            return
+
+        if "Type" in self.filtered_df.columns and "NbInteractions" in self.filtered_df.columns:
+            summary = self.filtered_df.groupby("Type")["NbInteractions"].sum()
+            total = summary.sum()
+
+            for type_name, val in summary.items():
+                pct = (val / total * 100) if total > 0 else 0
+                self.summary_tree.insert("", tk.END, values=(type_name, f"{int(val):,}", f"{pct:.1f}%"))
+
+            self.total_label.config(text=f"Total: {int(total):,}")
 
     def update_selection_count(self):
         if self.filtered_df is None:
@@ -929,53 +1214,6 @@ class CSVImportApp:
         self.update_edit_tree_selection()
         self.update_selection_count()
         self.update_preview()
-
-    def update_summary(self):
-        for item in self.summary_tree.get_children():
-            self.summary_tree.delete(item)
-        if self.filtered_df is None:
-            self.total_label.config(text="Total: 0")
-            return
-        if "Type" in self.filtered_df.columns and "NbInteractions" in self.filtered_df.columns:
-            summary = self.filtered_df.groupby("Type")["NbInteractions"].sum().reset_index()
-            for _, row in summary.iterrows():
-                self.summary_tree.insert("", tk.END, values=(row["Type"], f"{int(row['NbInteractions']):,}"))
-            total = self.filtered_df["NbInteractions"].sum()
-            self.total_label.config(text=f"Total: {int(total):,}")
-
-    def update_histogram(self):
-        self.ax.clear()
-        if self.filtered_df is None or self.filtered_df.empty:
-            self.ax.text(0.5, 0.5, 'Aucune donnée', ha='center', va='center')
-            self.canvas.draw()
-            return
-        if "Date_debut" not in self.filtered_df.columns or "Type" not in self.filtered_df.columns:
-            self.canvas.draw()
-            return
-
-        df_chart = self.filtered_df.copy()
-        df_chart["Date_debut"] = pd.to_datetime(df_chart["Date_debut"], errors='coerce')
-        df_chart = df_chart.dropna(subset=["Date_debut"])
-        if df_chart.empty:
-            self.canvas.draw()
-            return
-
-        pivot = df_chart.groupby([df_chart["Date_debut"].dt.strftime('%Y-%m-%d'), "Type"])["NbInteractions"].sum().unstack(fill_value=0)
-        dates = pivot.index.tolist()
-        bottom = np.zeros(len(dates))
-
-        for type_name in pivot.columns:
-            values = pivot[type_name].values
-            color = self.type_colors.get(type_name, '#888888')
-            self.ax.bar(dates, values, bottom=bottom, label=type_name, color=color)
-            bottom += values
-
-        self.ax.set_xlabel('Date')
-        self.ax.set_ylabel('Interactions')
-        self.ax.tick_params(axis='x', rotation=45, labelsize=7)
-        self.ax.legend(loc='upper right', fontsize=7)
-        self.fig.tight_layout()
-        self.canvas.draw()
 
     def get_selected_indices(self):
         if self.filtered_df is None:
@@ -1024,7 +1262,7 @@ class CSVImportApp:
                 except:
                     apres = avant
             self.detail_tree.insert("", tk.END, values=(
-                row.get("Segment", "")[:8], row.get("Type", "")[:6],
+                str(row.get("Segment", ""))[:8], str(row.get("Type", ""))[:6],
                 f"{avant:,.0f}", f"{apres:,.0f}"
             ))
 
