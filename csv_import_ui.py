@@ -139,6 +139,7 @@ class CSVImportApp:
             ("Barres groupées", "grouped_bar"),
             ("Cumulatif", "cumulative"),
             ("Heatmap", "heatmap"),
+            ("Date/Créneau", "date_creneau"),
         ]
         for text, val in viz_types:
             ttk.Radiobutton(control_frame, text=text, variable=self.viz_type,
@@ -764,6 +765,8 @@ class CSVImportApp:
             self.draw_cumulative(df)
         elif viz_type == "heatmap":
             self.draw_heatmap(df)
+        elif viz_type == "date_creneau":
+            self.draw_date_creneau(df)
 
         self.fig.tight_layout()
         self.canvas.draw()
@@ -861,6 +864,42 @@ class CSVImportApp:
         # Colorbar
         cbar = self.fig.colorbar(im, ax=self.ax)
         cbar.set_label('Interactions')
+
+    def draw_date_creneau(self, df):
+        """Visualisation hiérarchique Date_debut → Creneau"""
+        if "Creneau" not in df.columns:
+            self.ax.text(0.5, 0.5, 'Colonne Creneau manquante', ha='center', va='center')
+            return
+
+        # Grouper par Date et Creneau
+        pivot = df.groupby([df["Date_debut"].dt.strftime('%Y-%m-%d'), "Creneau"])["NbInteractions"].sum().unstack(fill_value=0)
+
+        if pivot.empty:
+            return
+
+        dates = pivot.index.tolist()
+        creneaux = pivot.columns.tolist()
+        n_creneaux = len(creneaux)
+
+        if n_creneaux == 0:
+            return
+
+        # Couleurs pour les créneaux
+        creneau_colors = {c: self.color_palette[i % len(self.color_palette)] for i, c in enumerate(creneaux)}
+
+        # Barres groupées par créneau
+        width = 0.8 / n_creneaux
+        x = np.arange(len(dates))
+
+        for i, creneau in enumerate(creneaux):
+            color = creneau_colors.get(creneau, '#888888')
+            self.ax.bar(x + i * width, pivot[creneau].values, width, label=str(creneau), color=color)
+
+        self.ax.set_xticks(x + width * (n_creneaux - 1) / 2)
+        self.ax.set_xticklabels(dates, rotation=45, fontsize=7)
+        self.ax.set_xlabel('Date')
+        self.ax.set_ylabel('Interactions')
+        self.ax.legend(title='Créneau', loc='upper right', fontsize=7)
 
     # Méthodes utilitaires existantes
     def on_tree_click(self, event):
