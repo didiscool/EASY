@@ -84,7 +84,7 @@ class EASYCorrected:
 
         # Haut: Contrôles
         control_frame = ttk.LabelFrame(paned, text="Filtres pour répartition", padding="5")
-        paned.add(control_frame, height=80)
+        paned.add(control_frame, weight=0)
 
         row1 = ttk.Frame(control_frame)
         row1.pack(fill=tk.X, pady=3)
@@ -108,8 +108,7 @@ class EASYCorrected:
         self.breakdown_tree = ttk.Treeview(
             table_frame,
             columns=("Type", "SegMacro", "Segment", "File", "DCR", "Offre", "Original", "Calculated", "Contribution"),
-            show="headings",
-            height=20
+            show="headings"
         )
 
         for col in ["Type", "SegMacro", "Segment", "File", "DCR", "Offre", "Original", "Calculated", "Contribution"]:
@@ -126,7 +125,7 @@ class EASYCorrected:
         self.breakdown_tree.bind('<Double-1>', self.on_breakdown_edit)
 
         self.breakdown_info = ttk.Label(paned, text="", foreground='blue')
-        paned.add(self.breakdown_info, height=20)
+        paned.add(self.breakdown_info, weight=0)
 
     def setup_filters_tab(self):
         """Onglet Filtres et Visualisation"""
@@ -135,7 +134,7 @@ class EASYCorrected:
 
         # Contrôles filtres
         control_frame = ttk.LabelFrame(paned, text="Filtrer et Visualiser", padding="5")
-        paned.add(control_frame, height=60)
+        paned.add(control_frame, weight=0)
 
         ttk.Label(control_frame, text="Appliquez les filtres ci-dessus, puis visualisez les données filtrées").pack()
 
@@ -155,8 +154,7 @@ class EASYCorrected:
         self.filtered_tree = ttk.Treeview(
             table_frame,
             columns=("Type", "SegMacro", "Segment", "File", "DCR", "Offre", "NbInt", "Original"),
-            show="headings",
-            height=10
+            show="headings"
         )
 
         for col in ["Type", "SegMacro", "Segment", "File", "DCR", "Offre", "NbInt", "Original"]:
@@ -182,8 +180,7 @@ class EASYCorrected:
         self.modify_tree = ttk.Treeview(
             left_frame,
             columns=("Sel", "Type", "Value", "Avant", "Après"),
-            show="headings",
-            height=20
+            show="headings"
         )
 
         for col in ["Sel", "Type", "Value", "Avant", "Après"]:
