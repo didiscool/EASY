@@ -16,16 +16,27 @@ dcrs = ["DCR1", "DCR2", "DCR3"]
 semaines = ["S01", "S02", "S03", "S04"]
 offres = ["Offre_A", "Offre_B", "Offre_C"]
 types = ["Appel", "Email", "Chat", "SMS"]
-pas_values = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]
-creneaux = ["8h-10h", "10h-12h", "12h-14h", "14h-16h", "16h-18h"]
+
+# Pas = niveau d'agrégation pour l'export
+pas_values = ["Semaine", "Jour", "Creneau"]
+
+# Créneaux de 30 minutes (de 8h à 18h)
+creneaux = [f"{h:02d}:{m:02d}" for h in range(8, 18) for m in [0, 30]]
 
 # Generate data
 data = []
 base_date = datetime(2024, 1, 1)
 
 for i in range(num_rows):
-    date_debut = base_date + timedelta(days=random.randint(0, 30))
-    date_fin = date_debut + timedelta(days=random.randint(1, 7))
+    # Date et heure de début
+    day_offset = random.randint(0, 30)
+    creneau = random.choice(creneaux)
+    hour, minute = map(int, creneau.split(':'))
+
+    date_debut = base_date + timedelta(days=day_offset, hours=hour, minutes=minute)
+    # Durée aléatoire de 30min à 2h
+    duration_minutes = random.choice([30, 60, 90, 120])
+    date_fin = date_debut + timedelta(minutes=duration_minutes)
 
     row = {
         "SegmentMacro": random.choice(segment_macros),
@@ -36,10 +47,10 @@ for i in range(num_rows):
         "Offre": random.choice(offres),
         "NbInteractions": random.randint(10, 500),
         "Type": random.choice(types),
-        "Date_debut": date_debut.strftime("%Y-%m-%d"),
-        "Date_fin": date_fin.strftime("%Y-%m-%d"),
+        "Date_debut": date_debut.strftime("%Y-%m-%d %H:%M"),
+        "Date_fin": date_fin.strftime("%Y-%m-%d %H:%M"),
         "Pas": random.choice(pas_values),
-        "Creneau": random.choice(creneaux)
+        "Creneau": creneau
     }
     data.append(row)
 
