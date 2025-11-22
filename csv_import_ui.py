@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-CSV Import Interface - Application pour importer et gérer des fichiers CSV
+XLSX Import Interface - Application pour importer et gérer des fichiers XLSX
 avec filtres, clés de répartition et construction de nouvelles lignes.
+Gère les données d'interactions avec agrégation par Semaine/Jour/Créneau (30min).
 """
 
 import tkinter as tk
@@ -339,6 +340,9 @@ class CSVImportApp:
         btn_frame.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(btn_frame, text="Calculer clés depuis données", command=self.calculate_all_keys).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Réinitialiser", command=self.reset_keys).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Ajouter clé", command=self.add_key_dialog).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Supprimer clé", command=self.delete_selected_key).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Normaliser (100%)", command=self.normalize_keys).pack(side=tk.LEFT, padx=5)
 
     def setup_temporal_keys(self):
         ttk.Label(self.temporal_frame, text="Pas:", font=('TkDefaultFont', 10, 'bold')).pack(anchor=tk.W, pady=5)
@@ -476,6 +480,8 @@ class CSVImportApp:
         # Boutons et aperçu
         btn_frame = ttk.Frame(self.tab_construct)
         btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(btn_frame, text="Importer valeurs existantes", command=self.import_definitions_from_data).pack(side=tk.LEFT, padx=5)
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         ttk.Button(btn_frame, text="APERÇU", command=self.preview_construction).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="CONSTRUIRE", command=self.construct_rows).pack(side=tk.LEFT, padx=5)
         self.construct_info = ttk.Label(btn_frame, text="", foreground='#0066cc')
@@ -968,11 +974,17 @@ class CSVImportApp:
     def export_csv(self):
         if self.df is None:
             return
-        file_path = filedialog.asksaveasfilename(defaultextension=".csv",
-                                                  filetypes=[("CSV files", "*.csv")])
+        file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
+                                                  filetypes=[("Excel files", "*.xlsx"), ("CSV files", "*.csv")])
         if file_path:
-            self.df.to_csv(file_path, index=False)
-            messagebox.showinfo("OK", f"Exporté: {file_path}")
+            try:
+                if file_path.endswith('.xlsx'):
+                    self.df.to_excel(file_path, index=False, engine='openpyxl')
+                else:
+                    self.df.to_csv(file_path, index=False)
+                messagebox.showinfo("OK", f"Exporté: {file_path}")
+            except Exception as e:
+                messagebox.showerror("Erreur", str(e))
 
     def import_keys(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx"), ("JSON files", "*.json")])
@@ -1077,33 +1089,6 @@ class CSVImportApp:
     def reset_keys(self):
         self.distribution_keys = {}
         self.refresh_keys_display()
-
-    def edit_key_value(self, tree):
-        sel = tree.selection()
-        if not sel:
-            return
-        item = sel[0]
-        values = tree.item(item)['values']
-
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Modifier")
-        dialog.geometry("200x80")
-
-        entry = ttk.Entry(dialog)
-        entry.insert(0, values[-1])
-        entry.pack(pady=10)
-
-        def save():
-            try:
-                new_val = float(entry.get())
-                new_values = list(values)
-                new_values[-1] = f"{new_val:.2f}"
-                tree.item(item, values=new_values)
-                dialog.destroy()
-            except:
-                pass
-
-        ttk.Button(dialog, text="OK", command=save).pack()
 
     def assign_type_colors(self):
         if self.df is None or "Type" not in self.df.columns:
@@ -1352,6 +1337,154 @@ class CSVImportApp:
             return
         self.df = self.history.pop()
         self.apply_filters()
+
+    def import_definitions_from_data(self):
+        """Importer les valeurs existantes depuis les données chargées"""
+        if self.df is None:
+            messagebox.showwarning("Attention", "Aucune donnée chargée")
+            return
+
+        # Mapping colonnes -> listbox
+        mappings = [
+            ("SegmentMacro", "segmacro"),
+            ("Segment", "segment"),
+            ("File", "file_def"),
+            ("DCR", "dcr_def"),
+            ("Offre", "offre_def"),
+            ("Type", "type_def")
+        ]
+
+        imported = 0
+        for col, list_name in mappings:
+            if col in self.df.columns:
+                listbox = getattr(self, f"{list_name}_listbox", None)
+                if listbox:
+                    listbox.delete(0, tk.END)
+                    values = sorted(self.df[col].dropna().unique().astype(str).tolist())
+                    for val in values:
+                        listbox.insert(tk.END, val)
+                    imported += len(values)
+
+        # Mettre à jour les combos parents
+        if hasattr(self, 'segment_parent_combo'):
+            segmacros = self.get_list_items("segmacro")
+            self.segment_parent_combo["values"] = segmacros
+
+        if hasattr(self, 'file_def_parent_combo'):
+            segments = self.get_list_items("segment")
+            self.file_def_parent_combo["values"] = segments
+
+        messagebox.showinfo("OK", f"{imported} valeurs importées depuis les données")
+
+    def add_key_dialog(self):
+        """Ajouter une nouvelle clé de répartition"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Ajouter une clé")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)
+
+        ttk.Label(dialog, text="Type de clé:").pack(pady=5)
+        key_type = tk.StringVar(value="temporal")
+        type_combo = ttk.Combobox(dialog, textvariable=key_type,
+                                   values=["temporal", "type", "segmacro_type"])
+        type_combo.pack()
+
+        ttk.Label(dialog, text="Élément:").pack(pady=5)
+        element_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=element_var).pack()
+
+        ttk.Label(dialog, text="Valeur (%):").pack(pady=5)
+        value_var = tk.StringVar(value="10")
+        ttk.Entry(dialog, textvariable=value_var).pack()
+
+        def save():
+            try:
+                kt = key_type.get()
+                elem = element_var.get().strip()
+                val = float(value_var.get())
+                if elem:
+                    if kt not in self.distribution_keys:
+                        self.distribution_keys[kt] = {}
+                    self.distribution_keys[kt][elem] = val
+                    self.refresh_keys_display()
+                    dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Erreur", str(e))
+
+        ttk.Button(dialog, text="Ajouter", command=save).pack(pady=10)
+
+    def delete_selected_key(self):
+        """Supprimer la clé sélectionnée"""
+        # Trouver l'arbre actif
+        for tree_name, key_type in [("temporal_tree", "temporal"), ("type_keys_tree", "type")]:
+            tree = getattr(self, tree_name, None)
+            if tree:
+                sel = tree.selection()
+                if sel:
+                    item = sel[0]
+                    values = tree.item(item)['values']
+                    elem = str(values[0])
+                    if key_type in self.distribution_keys and elem in self.distribution_keys[key_type]:
+                        del self.distribution_keys[key_type][elem]
+                        self.refresh_keys_display()
+                        return
+        messagebox.showinfo("Info", "Sélectionnez une clé dans un tableau")
+
+    def normalize_keys(self):
+        """Normaliser les clés pour que la somme fasse 100%"""
+        for key_type in ["temporal", "type"]:
+            if key_type in self.distribution_keys:
+                keys = self.distribution_keys[key_type]
+                total = sum(keys.values())
+                if total > 0:
+                    for elem in keys:
+                        keys[elem] = (keys[elem] / total) * 100
+        self.refresh_keys_display()
+        messagebox.showinfo("OK", "Clés normalisées à 100%")
+
+    def edit_key_value(self, tree):
+        sel = tree.selection()
+        if not sel:
+            return
+        item = sel[0]
+        values = tree.item(item)['values']
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Modifier")
+        dialog.geometry("200x100")
+        dialog.transient(self.root)
+
+        ttk.Label(dialog, text=f"Élément: {values[0]}").pack(pady=5)
+        entry = ttk.Entry(dialog)
+        entry.insert(0, values[-1])
+        entry.pack(pady=5)
+        entry.select_range(0, tk.END)
+        entry.focus()
+
+        def save():
+            try:
+                new_val = float(entry.get())
+                new_values = list(values)
+                new_values[-1] = f"{new_val:.2f}"
+                tree.item(item, values=new_values)
+
+                # Sauvegarder dans distribution_keys
+                elem = str(values[0])
+                if tree == self.temporal_tree:
+                    if "temporal" not in self.distribution_keys:
+                        self.distribution_keys["temporal"] = {}
+                    self.distribution_keys["temporal"][elem] = new_val
+                elif tree == self.type_keys_tree:
+                    if "type" not in self.distribution_keys:
+                        self.distribution_keys["type"] = {}
+                    self.distribution_keys["type"][elem] = new_val
+
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Erreur", "Valeur numérique invalide")
+
+        entry.bind('<Return>', lambda e: save())
+        ttk.Button(dialog, text="OK", command=save).pack(pady=5)
 
 def main():
     root = tk.Tk()
