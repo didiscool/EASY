@@ -71,7 +71,9 @@ class CSVImportApp:
             ("Segment:", "segment_var", "segment_combo"),
             ("DCR:", "dcr_var", "dcr_combo"),
             ("Semaine:", "semaine_var", "semaine_combo"),
-            ("Type:", "type_var", "type_combo")
+            ("Type:", "type_var", "type_combo"),
+            ("Pas:", "pas_var", "pas_combo"),
+            ("Creneau:", "creneau_var", "creneau_combo")
         ]:
             ttk.Label(filter_row, text=label).pack(side=tk.LEFT, padx=(0, 2))
             setattr(self, var_name, tk.StringVar())
@@ -1076,7 +1078,8 @@ class CSVImportApp:
         for combo, col in [
             (self.segment_macro_combo, "SegmentMacro"), (self.file_combo, "File"),
             (self.segment_combo, "Segment"), (self.dcr_combo, "DCR"),
-            (self.semaine_combo, "Semaine"), (self.type_combo, "Type")
+            (self.semaine_combo, "Semaine"), (self.type_combo, "Type"),
+            (self.pas_combo, "Pas"), (self.creneau_combo, "Creneau")
         ]:
             if col in self.df.columns:
                 values = [""] + sorted(self.df[col].dropna().unique().astype(str).tolist())
@@ -1090,7 +1093,8 @@ class CSVImportApp:
         for var, col in [
             (self.segment_macro_var, "SegmentMacro"), (self.file_var, "File"),
             (self.segment_var, "Segment"), (self.dcr_var, "DCR"),
-            (self.semaine_var, "Semaine"), (self.type_var, "Type")
+            (self.semaine_var, "Semaine"), (self.type_var, "Type"),
+            (self.pas_var, "Pas"), (self.creneau_var, "Creneau")
         ]:
             if var.get() and col in self.filtered_df.columns:
                 self.filtered_df = self.filtered_df[self.filtered_df[col].astype(str) == var.get()]
@@ -1110,7 +1114,8 @@ class CSVImportApp:
 
     def reset_filters(self):
         for var in [self.segment_macro_var, self.file_var, self.segment_var,
-                    self.dcr_var, self.semaine_var, self.type_var]:
+                    self.dcr_var, self.semaine_var, self.type_var,
+                    self.pas_var, self.creneau_var]:
             var.set("")
         self.date_debut_filter.delete(0, tk.END)
         self.date_fin_filter.delete(0, tk.END)
@@ -1124,7 +1129,8 @@ class CSVImportApp:
         for var, name in [
             (self.segment_macro_var, "SM"), (self.file_var, "F"),
             (self.segment_var, "S"), (self.dcr_var, "D"),
-            (self.semaine_var, "Sem"), (self.type_var, "T")
+            (self.semaine_var, "Sem"), (self.type_var, "T"),
+            (self.pas_var, "Pas"), (self.creneau_var, "Cr")
         ]:
             if var.get():
                 active.append(f"{name}={var.get()}")
