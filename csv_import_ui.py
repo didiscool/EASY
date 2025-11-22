@@ -51,8 +51,8 @@ class CSVImportApp:
         top_frame = ttk.LabelFrame(main_frame, text="Import/Export", padding="3")
         top_frame.pack(fill=tk.X, pady=(0, 5))
 
-        ttk.Button(top_frame, text="Importer CSV", command=self.import_csv).pack(side=tk.LEFT, padx=3)
-        ttk.Button(top_frame, text="Exporter CSV", command=self.export_csv).pack(side=tk.LEFT, padx=3)
+        ttk.Button(top_frame, text="Importer", command=self.import_csv).pack(side=tk.LEFT, padx=3)
+        ttk.Button(top_frame, text="Exporter", command=self.export_csv).pack(side=tk.LEFT, padx=3)
         ttk.Button(top_frame, text="Importer Clés", command=self.import_keys).pack(side=tk.LEFT, padx=3)
         ttk.Button(top_frame, text="Exporter Clés", command=self.export_keys).pack(side=tk.LEFT, padx=3)
         self.file_label = ttk.Label(top_frame, text="Aucun fichier", font=('TkDefaultFont', 9, 'italic'))
@@ -597,10 +597,13 @@ class CSVImportApp:
 
     def import_csv(self):
         file_path = filedialog.askopenfilename(
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
+            filetypes=[("Excel files", "*.xlsx"), ("CSV files", "*.csv"), ("All files", "*.*")])
         if file_path:
             try:
-                self.df = pd.read_csv(file_path, sep=None, engine='python')
+                if file_path.endswith('.xlsx'):
+                    self.df = pd.read_excel(file_path, engine='openpyxl')
+                else:
+                    self.df = pd.read_csv(file_path, sep=None, engine='python')
                 # Ajouter colonnes manquantes
                 for col in ["Pas", "Creneau"]:
                     if col not in self.df.columns:
