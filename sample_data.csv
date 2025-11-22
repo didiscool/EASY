@@ -1,0 +1,7 @@
+SegmentMacro,File,Segment,DCR,Semaine,Offre,NbInteractions,Type,Date_debut,Date_fin
+Macro1,FileA,Seg1,DCR1,S01,Offre1,150,Email,2024-01-01,2024-01-07
+Macro1,FileA,Seg2,DCR1,S01,Offre2,200,SMS,2024-01-01,2024-01-07
+Macro2,FileB,Seg1,DCR2,S02,Offre1,300,Email,2024-01-08,2024-01-14
+Macro2,FileB,Seg3,DCR2,S02,Offre3,450,Push,2024-01-08,2024-01-14
+Macro1,FileA,Seg1,DCR1,S03,Offre1,175,Email,2024-01-15,2024-01-21
+Macro3,FileC,Seg2,DCR3,S03,Offre2,225,SMS,2024-01-15,2024-01-21
