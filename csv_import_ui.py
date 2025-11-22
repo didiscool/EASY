@@ -10,10 +10,10 @@ from tkcalendar import DateEntry
 import pandas as pd
 from datetime import datetime
 import os
-import copy
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import numpy as np
 
 class CSVImportApp:
     def __init__(self, root):
@@ -26,16 +26,20 @@ class CSVImportApp:
         self.log_file = "modifications_log.txt"
         self.history = []
         self.max_history = 50
-        self.check_vars = {}  # Variables pour les checkboxes
+        self.check_vars = {}
+
+        # Couleurs pour les types
+        self.type_colors = {}
+        self.color_palette = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0',
+                              '#00BCD4', '#FFEB3B', '#795548', '#607D8B', '#F44336']
 
         self.setup_ui()
 
     def setup_ui(self):
-        # Frame principale
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # ===== SECTION HAUTE: Import/Export =====
+        # Import/Export
         top_frame = ttk.Frame(main_frame)
         top_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -47,45 +51,27 @@ class CSVImportApp:
         self.file_label = ttk.Label(import_frame, text="Aucun fichier", font=('TkDefaultFont', 9, 'italic'))
         self.file_label.pack(side=tk.LEFT, padx=15)
 
-        # ===== FILTRES GLOBAUX (toujours visibles) =====
+        # Filtres globaux
         filter_frame = ttk.LabelFrame(main_frame, text="Filtres globaux", padding="10")
         filter_frame.pack(fill=tk.X, pady=(0, 10))
 
-        # Ligne 1
         filter_row1 = ttk.Frame(filter_frame)
         filter_row1.pack(fill=tk.X, pady=3)
 
-        ttk.Label(filter_row1, text="SegmentMacro:").pack(side=tk.LEFT, padx=(0, 5))
-        self.segment_macro_var = tk.StringVar()
-        self.segment_macro_combo = ttk.Combobox(filter_row1, textvariable=self.segment_macro_var, width=10)
-        self.segment_macro_combo.pack(side=tk.LEFT, padx=(0, 10))
+        for label, var_name, combo_name in [
+            ("SegmentMacro:", "segment_macro_var", "segment_macro_combo"),
+            ("File:", "file_var", "file_combo"),
+            ("Segment:", "segment_var", "segment_combo"),
+            ("DCR:", "dcr_var", "dcr_combo"),
+            ("Semaine:", "semaine_var", "semaine_combo"),
+            ("Type:", "type_var", "type_combo")
+        ]:
+            ttk.Label(filter_row1, text=label).pack(side=tk.LEFT, padx=(0, 3))
+            setattr(self, var_name, tk.StringVar())
+            combo = ttk.Combobox(filter_row1, textvariable=getattr(self, var_name), width=10)
+            setattr(self, combo_name, combo)
+            combo.pack(side=tk.LEFT, padx=(0, 8))
 
-        ttk.Label(filter_row1, text="File:").pack(side=tk.LEFT, padx=(0, 5))
-        self.file_var = tk.StringVar()
-        self.file_combo = ttk.Combobox(filter_row1, textvariable=self.file_var, width=10)
-        self.file_combo.pack(side=tk.LEFT, padx=(0, 10))
-
-        ttk.Label(filter_row1, text="Segment:").pack(side=tk.LEFT, padx=(0, 5))
-        self.segment_var = tk.StringVar()
-        self.segment_combo = ttk.Combobox(filter_row1, textvariable=self.segment_var, width=10)
-        self.segment_combo.pack(side=tk.LEFT, padx=(0, 10))
-
-        ttk.Label(filter_row1, text="DCR:").pack(side=tk.LEFT, padx=(0, 5))
-        self.dcr_var = tk.StringVar()
-        self.dcr_combo = ttk.Combobox(filter_row1, textvariable=self.dcr_var, width=10)
-        self.dcr_combo.pack(side=tk.LEFT, padx=(0, 10))
-
-        ttk.Label(filter_row1, text="Semaine:").pack(side=tk.LEFT, padx=(0, 5))
-        self.semaine_var = tk.StringVar()
-        self.semaine_combo = ttk.Combobox(filter_row1, textvariable=self.semaine_var, width=10)
-        self.semaine_combo.pack(side=tk.LEFT, padx=(0, 10))
-
-        ttk.Label(filter_row1, text="Type:").pack(side=tk.LEFT, padx=(0, 5))
-        self.type_var = tk.StringVar()
-        self.type_combo = ttk.Combobox(filter_row1, textvariable=self.type_var, width=10)
-        self.type_combo.pack(side=tk.LEFT)
-
-        # Ligne 2: Dates + boutons
         filter_row2 = ttk.Frame(filter_frame)
         filter_row2.pack(fill=tk.X, pady=3)
 
@@ -102,76 +88,120 @@ class CSVImportApp:
         ttk.Button(filter_row2, text="Appliquer", command=self.apply_filters).pack(side=tk.LEFT, padx=5)
         ttk.Button(filter_row2, text="Réinitialiser", command=self.reset_filters).pack(side=tk.LEFT, padx=5)
 
-        # Filtres actifs
         self.active_filters_label = ttk.Label(filter_row2, text="", font=('TkDefaultFont', 9, 'bold'), foreground='#0066cc')
         self.active_filters_label.pack(side=tk.LEFT, padx=15)
 
-        # ===== NOTEBOOK (onglets) =====
+        # Notebook avec 2 onglets
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        # Onglet 1: Visualisation (accueil)
+        # Onglet 1: Visualisation
         self.tab_viz = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_viz, text="Visualisation")
 
-        # Onglet 2: Données & Sélection
-        self.tab_data = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_data, text="Données & Sélection")
-
-        # Onglet 3: Modifications
-        self.tab_modify = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_modify, text="Modifications")
+        # Onglet 2: Sélection & Modifications (unifié)
+        self.tab_edit = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_edit, text="Sélection & Modifications")
 
         self.setup_viz_tab()
-        self.setup_data_tab()
-        self.setup_modify_tab()
+        self.setup_edit_tab()
 
     def setup_viz_tab(self):
-        """Onglet Visualisation - Page d'accueil"""
+        """Onglet Visualisation avec tableau complet et histogramme coloré"""
 
-        # Frame pour le résumé
-        summary_frame = ttk.LabelFrame(self.tab_viz, text="Résumé par Type", padding="10")
-        summary_frame.pack(fill=tk.X, pady=(0, 10))
+        # PanedWindow pour diviser verticalement
+        paned = ttk.PanedWindow(self.tab_viz, orient=tk.VERTICAL)
+        paned.pack(fill=tk.BOTH, expand=True)
 
-        self.summary_tree = ttk.Treeview(summary_frame, columns=("Type", "Total"), show="headings", height=4)
+        # Partie haute: Résumé + Histogramme
+        top_pane = ttk.Frame(paned)
+        paned.add(top_pane, weight=1)
+
+        # Frame gauche: Résumé par Type
+        left_frame = ttk.LabelFrame(top_pane, text="Résumé par Type", padding="5")
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+
+        self.summary_tree = ttk.Treeview(left_frame, columns=("Type", "Total", "Couleur"), show="headings", height=6)
         self.summary_tree.heading("Type", text="Type")
-        self.summary_tree.heading("Total", text="Total Interactions")
-        self.summary_tree.column("Type", width=200)
-        self.summary_tree.column("Total", width=200)
-        self.summary_tree.pack(fill=tk.X)
+        self.summary_tree.heading("Total", text="Total")
+        self.summary_tree.heading("Couleur", text="")
+        self.summary_tree.column("Type", width=100)
+        self.summary_tree.column("Total", width=100)
+        self.summary_tree.column("Couleur", width=30)
+        self.summary_tree.pack(fill=tk.BOTH, expand=True)
 
-        # Total global
-        self.total_label = ttk.Label(summary_frame, text="Total global: 0", font=('TkDefaultFont', 11, 'bold'))
-        self.total_label.pack(anchor=tk.E, pady=5)
+        self.total_label = ttk.Label(left_frame, text="Total: 0", font=('TkDefaultFont', 10, 'bold'))
+        self.total_label.pack(anchor=tk.E, pady=3)
 
-        # Histogramme
-        chart_frame = ttk.LabelFrame(self.tab_viz, text="Évolution par Date début", padding="10")
-        chart_frame.pack(fill=tk.BOTH, expand=True)
+        # Frame droite: Histogramme
+        right_frame = ttk.LabelFrame(top_pane, text="Évolution par Date (coloré par Type)", padding="5")
+        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.fig = Figure(figsize=(12, 5), dpi=85)
+        self.fig = Figure(figsize=(8, 4), dpi=85)
         self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=right_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    def setup_data_tab(self):
-        """Onglet Données avec sélection par checkbox"""
+        # Partie basse: Tableau complet
+        bottom_pane = ttk.LabelFrame(paned, text="Données complètes", padding="5")
+        paned.add(bottom_pane, weight=1)
+
+        # Treeview avec toutes les colonnes
+        self.columns = ["SegmentMacro", "File", "Segment", "DCR", "Semaine", "Offre",
+                       "NbInteractions", "Type", "Date_debut", "Date_fin"]
+
+        tree_frame = ttk.Frame(bottom_pane)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.viz_tree = ttk.Treeview(tree_frame, columns=self.columns, show="headings", height=10)
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.viz_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.viz_tree.xview)
+        self.viz_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        self.viz_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+
+        for col in self.columns:
+            self.viz_tree.heading(col, text=col)
+            self.viz_tree.column(col, width=90, minwidth=60)
+
+        self.row_count_label = ttk.Label(bottom_pane, text="0 lignes")
+        self.row_count_label.pack(anchor=tk.E)
+
+    def setup_edit_tab(self):
+        """Onglet unifié Sélection & Modifications"""
+
+        # PanedWindow horizontal
+        paned = ttk.PanedWindow(self.tab_edit, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True)
+
+        # Partie gauche: Sélection des données
+        left_pane = ttk.Frame(paned)
+        paned.add(left_pane, weight=2)
 
         # Contrôles de sélection
-        control_frame = ttk.Frame(self.tab_data)
+        control_frame = ttk.LabelFrame(left_pane, text="Sélection", padding="5")
         control_frame.pack(fill=tk.X, pady=(0, 5))
 
-        ttk.Button(control_frame, text="Tout cocher", command=self.check_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Tout décocher", command=self.uncheck_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Inverser", command=self.invert_check).pack(side=tk.LEFT, padx=5)
+        btn_frame = ttk.Frame(control_frame)
+        btn_frame.pack(fill=tk.X)
 
-        self.selection_count_label = ttk.Label(control_frame, text="0 / 0 sélectionné(s)")
-        self.selection_count_label.pack(side=tk.RIGHT, padx=10)
+        ttk.Button(btn_frame, text="Tout cocher", command=self.check_all).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Tout décocher", command=self.uncheck_all).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Inverser", command=self.invert_check).pack(side=tk.LEFT, padx=3)
 
-        # Frame pour le tableau avec checkboxes
-        table_frame = ttk.Frame(self.tab_data)
+        self.selection_count_label = ttk.Label(btn_frame, text="0 / 0", font=('TkDefaultFont', 9, 'bold'))
+        self.selection_count_label.pack(side=tk.RIGHT, padx=5)
+
+        # Tableau avec checkboxes
+        table_frame = ttk.Frame(left_pane)
         table_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Canvas scrollable pour les checkboxes
         self.data_canvas = tk.Canvas(table_frame)
         scrollbar_y = ttk.Scrollbar(table_frame, orient="vertical", command=self.data_canvas.yview)
         scrollbar_x = ttk.Scrollbar(table_frame, orient="horizontal", command=self.data_canvas.xview)
@@ -187,133 +217,101 @@ class CSVImportApp:
         scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
         self.data_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Bind mousewheel
         self.data_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
 
-    def setup_modify_tab(self):
-        """Onglet Modifications avec curseur et aperçu"""
-
-        # Résumé sélection
-        selection_frame = ttk.LabelFrame(self.tab_modify, text="Sélection", padding="10")
-        selection_frame.pack(fill=tk.X, pady=(0, 10))
-
-        self.modify_selection_label = ttk.Label(selection_frame,
-            text="Cochez des lignes dans l'onglet 'Données & Sélection'", font=('TkDefaultFont', 11))
-        self.modify_selection_label.pack()
+        # Partie droite: Modifications
+        right_pane = ttk.Frame(paned)
+        paned.add(right_pane, weight=1)
 
         # Mode de modification
-        mode_frame = ttk.LabelFrame(self.tab_modify, text="Type de modification", padding="10")
-        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        mode_frame = ttk.LabelFrame(right_pane, text="Modification", padding="10")
+        mode_frame.pack(fill=tk.X, pady=(0, 5))
 
         self.modify_mode = tk.StringVar(value="relative")
+        ttk.Radiobutton(mode_frame, text="Relatif (%)", variable=self.modify_mode,
+                       value="relative", command=self.on_mode_change).pack(anchor=tk.W)
+        ttk.Radiobutton(mode_frame, text="Valeur absolue", variable=self.modify_mode,
+                       value="global", command=self.on_mode_change).pack(anchor=tk.W)
 
-        mode_row = ttk.Frame(mode_frame)
-        mode_row.pack(fill=tk.X)
+        # Curseur relatif
+        self.slider_frame = ttk.Frame(mode_frame)
+        self.slider_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Radiobutton(mode_row, text="Relatif (%)", variable=self.modify_mode,
-                       value="relative", command=self.on_mode_change).pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(mode_row, text="Valeur absolue", variable=self.modify_mode,
-                       value="global", command=self.on_mode_change).pack(side=tk.LEFT, padx=10)
-
-        # Curseur pour modification relative
-        self.slider_frame = ttk.LabelFrame(self.tab_modify, text="Ajustement relatif", padding="10")
-        self.slider_frame.pack(fill=tk.X, pady=(0, 10))
-
-        slider_row = ttk.Frame(self.slider_frame)
-        slider_row.pack(fill=tk.X)
-
-        ttk.Label(slider_row, text="-50%").pack(side=tk.LEFT)
-
+        ttk.Label(self.slider_frame, text="-50%").pack(side=tk.LEFT)
         self.slider_var = tk.DoubleVar(value=0)
-        self.slider = ttk.Scale(slider_row, from_=-50, to=50, variable=self.slider_var,
+        self.slider = ttk.Scale(self.slider_frame, from_=-50, to=50, variable=self.slider_var,
                                 orient=tk.HORIZONTAL, command=self.on_slider_change)
-        self.slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+        self.slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        ttk.Label(self.slider_frame, text="+50%").pack(side=tk.LEFT)
 
-        ttk.Label(slider_row, text="+50%").pack(side=tk.LEFT)
+        self.slider_value_label = ttk.Label(mode_frame, text="0%", font=('TkDefaultFont', 12, 'bold'))
+        self.slider_value_label.pack()
 
-        self.slider_value_label = ttk.Label(self.slider_frame, text="0%", font=('TkDefaultFont', 14, 'bold'))
-        self.slider_value_label.pack(pady=5)
-
-        # Champ pour valeur absolue
-        self.absolute_frame = ttk.LabelFrame(self.tab_modify, text="Valeur absolue", padding="10")
-
-        abs_row = ttk.Frame(self.absolute_frame)
-        abs_row.pack(fill=tk.X)
-
-        ttk.Label(abs_row, text="Nouvelle valeur:").pack(side=tk.LEFT, padx=5)
+        # Champ valeur absolue
+        self.absolute_frame = ttk.Frame(mode_frame)
+        ttk.Label(self.absolute_frame, text="Valeur:").pack(side=tk.LEFT)
         self.absolute_value_var = tk.StringVar()
         self.absolute_value_var.trace('w', lambda *args: self.update_preview())
-        ttk.Entry(abs_row, textvariable=self.absolute_value_var, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(self.absolute_frame, textvariable=self.absolute_value_var, width=10).pack(side=tk.LEFT, padx=5)
 
-        # Aperçu global
-        preview_frame = ttk.LabelFrame(self.tab_modify, text="Aperçu global", padding="10")
-        preview_frame.pack(fill=tk.X, pady=(0, 10))
+        # Aperçu
+        preview_frame = ttk.LabelFrame(right_pane, text="Aperçu", padding="10")
+        preview_frame.pack(fill=tk.X, pady=(0, 5))
 
-        preview_row = ttk.Frame(preview_frame)
-        preview_row.pack(fill=tk.X)
+        self.before_label = ttk.Label(preview_frame, text="AVANT: -", font=('TkDefaultFont', 10))
+        self.before_label.pack(anchor=tk.W)
+        self.after_label = ttk.Label(preview_frame, text="APRÈS: -", font=('TkDefaultFont', 10, 'bold'), foreground='#0066cc')
+        self.after_label.pack(anchor=tk.W)
+        self.diff_label = ttk.Label(preview_frame, text="DIFF: -", font=('TkDefaultFont', 10))
+        self.diff_label.pack(anchor=tk.W)
 
-        self.before_label = ttk.Label(preview_row, text="AVANT: 0", font=('TkDefaultFont', 12))
-        self.before_label.pack(side=tk.LEFT, padx=20)
+        # Détail
+        detail_frame = ttk.LabelFrame(right_pane, text="Détail", padding="5")
+        detail_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
 
-        self.after_label = ttk.Label(preview_row, text="APRÈS: 0", font=('TkDefaultFont', 12, 'bold'), foreground='#0066cc')
-        self.after_label.pack(side=tk.LEFT, padx=20)
-
-        self.diff_label = ttk.Label(preview_row, text="DIFF: 0", font=('TkDefaultFont', 12))
-        self.diff_label.pack(side=tk.LEFT, padx=20)
-
-        # Aperçu détaillé (ligne par ligne)
-        detail_frame = ttk.LabelFrame(self.tab_modify, text="Aperçu détaillé (lignes sélectionnées)", padding="5")
-        detail_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-
-        # Treeview pour détail
         self.detail_tree = ttk.Treeview(detail_frame,
-            columns=("Segment", "Type", "Avant", "Après", "Diff"), show="headings", height=8)
+            columns=("Segment", "Type", "Avant", "Après"), show="headings", height=8)
 
-        for col, width in [("Segment", 100), ("Type", 80), ("Avant", 100), ("Après", 100), ("Diff", 100)]:
+        for col, width in [("Segment", 80), ("Type", 60), ("Avant", 70), ("Après", 70)]:
             self.detail_tree.heading(col, text=col)
             self.detail_tree.column(col, width=width)
 
         detail_scroll = ttk.Scrollbar(detail_frame, orient="vertical", command=self.detail_tree.yview)
         self.detail_tree.configure(yscrollcommand=detail_scroll.set)
-
         self.detail_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         detail_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Actions
-        action_frame = ttk.Frame(self.tab_modify)
-        action_frame.pack(fill=tk.X, pady=5)
+        action_frame = ttk.Frame(right_pane)
+        action_frame.pack(fill=tk.X)
 
-        ttk.Button(action_frame, text="APPLIQUER", command=self.apply_modification).pack(side=tk.LEFT, padx=10)
-        ttk.Button(action_frame, text="Annuler (Ctrl+Z)", command=self.undo).pack(side=tk.LEFT, padx=10)
-        ttk.Button(action_frame, text="Historique", command=self.view_log).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="APPLIQUER", command=self.apply_modification).pack(fill=tk.X, pady=2)
+        ttk.Button(action_frame, text="Annuler", command=self.undo).pack(fill=tk.X, pady=2)
+        ttk.Button(action_frame, text="Historique", command=self.view_log).pack(fill=tk.X, pady=2)
 
-        self.history_label = ttk.Label(action_frame, text="0 annulation(s) possible(s)", foreground='gray')
-        self.history_label.pack(side=tk.RIGHT, padx=10)
+        self.history_label = ttk.Label(action_frame, text="0 undo", foreground='gray')
+        self.history_label.pack()
 
-        # Raccourci
         self.root.bind('<Control-z>', lambda e: self.undo())
-
-        # Initialiser l'affichage du bon mode
         self.on_mode_change()
 
     def _on_mousewheel(self, event):
         self.data_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
     def on_mode_change(self):
-        """Changer entre mode relatif et absolu"""
         if self.modify_mode.get() == "relative":
-            self.slider_frame.pack(fill=tk.X, pady=(0, 10), after=self.slider_frame.master.children['!labelframe2'])
+            self.slider_frame.pack(fill=tk.X, pady=5)
+            self.slider_value_label.pack()
             self.absolute_frame.pack_forget()
         else:
-            self.absolute_frame.pack(fill=tk.X, pady=(0, 10), after=self.slider_frame.master.children['!labelframe2'])
             self.slider_frame.pack_forget()
+            self.slider_value_label.pack_forget()
+            self.absolute_frame.pack(fill=tk.X, pady=5)
         self.update_preview()
 
     def on_slider_change(self, value):
-        """Mise à jour lors du déplacement du curseur"""
         val = float(value)
-        sign = "+" if val >= 0 else ""
-        self.slider_value_label.config(text=f"{sign}{val:.0f}%")
+        self.slider_value_label.config(text=f"{'+' if val >= 0 else ''}{val:.0f}%")
         self.update_preview()
 
     def import_csv(self):
@@ -329,11 +327,20 @@ class CSVImportApp:
                 self.file_label.config(text=os.path.basename(file_path))
                 self.history = []
                 self.check_vars = {}
+                self.assign_type_colors()
                 self.populate_filters()
                 self.update_all_views()
                 messagebox.showinfo("Succès", f"{len(self.df)} lignes importées")
             except Exception as e:
-                messagebox.showerror("Erreur", f"Erreur: {str(e)}")
+                messagebox.showerror("Erreur", str(e))
+
+    def assign_type_colors(self):
+        """Assigner une couleur à chaque type"""
+        if self.df is None or "Type" not in self.df.columns:
+            return
+        types = self.df["Type"].dropna().unique()
+        self.type_colors = {t: self.color_palette[i % len(self.color_palette)]
+                           for i, t in enumerate(types)}
 
     def export_csv(self):
         if self.df is None:
@@ -341,51 +348,32 @@ class CSVImportApp:
             return
 
         file_path = filedialog.asksaveasfilename(
-            title="Enregistrer CSV",
-            defaultextension=".csv",
+            title="Enregistrer CSV", defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")]
         )
 
         if file_path:
             try:
                 self.df.to_csv(file_path, index=False)
-
-                # Afficher aperçu
-                preview_window = tk.Toplevel(self.root)
-                preview_window.title("Export réussi - Aperçu")
-                preview_window.geometry("800x400")
-
-                ttk.Label(preview_window, text=f"Fichier exporté: {file_path}",
-                         font=('TkDefaultFont', 10, 'bold')).pack(pady=10)
-
-                text = tk.Text(preview_window, wrap=tk.NONE)
-                scroll_y = ttk.Scrollbar(preview_window, command=text.yview)
-                scroll_x = ttk.Scrollbar(preview_window, orient=tk.HORIZONTAL, command=text.xview)
-                text.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
-
-                scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
-                scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+                # Aperçu
+                win = tk.Toplevel(self.root)
+                win.title("Export réussi")
+                win.geometry("800x400")
+                ttk.Label(win, text=f"Exporté: {file_path}", font=('TkDefaultFont', 10, 'bold')).pack(pady=5)
+                text = tk.Text(win, wrap=tk.NONE)
                 text.pack(fill=tk.BOTH, expand=True)
-
-                # Afficher les premières lignes
-                preview_df = self.df.head(50)
-                text.insert(tk.END, preview_df.to_string())
+                text.insert(tk.END, self.df.head(50).to_string())
                 text.config(state=tk.DISABLED)
-
             except Exception as e:
                 messagebox.showerror("Erreur", str(e))
 
     def populate_filters(self):
         if self.df is None:
             return
-
         for combo, col in [
-            (self.segment_macro_combo, "SegmentMacro"),
-            (self.file_combo, "File"),
-            (self.segment_combo, "Segment"),
-            (self.dcr_combo, "DCR"),
-            (self.semaine_combo, "Semaine"),
-            (self.type_combo, "Type")
+            (self.segment_macro_combo, "SegmentMacro"), (self.file_combo, "File"),
+            (self.segment_combo, "Segment"), (self.dcr_combo, "DCR"),
+            (self.semaine_combo, "Semaine"), (self.type_combo, "Type")
         ]:
             if col in self.df.columns:
                 values = [""] + sorted(self.df[col].dropna().unique().astype(str).tolist())
@@ -398,28 +386,21 @@ class CSVImportApp:
 
         self.filtered_df = self.df.copy()
 
-        # Filtres textuels
-        for value, col in [
-            (self.segment_macro_var.get(), "SegmentMacro"),
-            (self.file_var.get(), "File"),
-            (self.segment_var.get(), "Segment"),
-            (self.dcr_var.get(), "DCR"),
-            (self.semaine_var.get(), "Semaine"),
-            (self.type_var.get(), "Type")
+        for var, col in [
+            (self.segment_macro_var, "SegmentMacro"), (self.file_var, "File"),
+            (self.segment_var, "Segment"), (self.dcr_var, "DCR"),
+            (self.semaine_var, "Semaine"), (self.type_var, "Type")
         ]:
-            if value and col in self.filtered_df.columns:
-                self.filtered_df = self.filtered_df[self.filtered_df[col].astype(str) == value]
+            if var.get() and col in self.filtered_df.columns:
+                self.filtered_df = self.filtered_df[self.filtered_df[col].astype(str) == var.get()]
 
-        # Filtre date
-        date_debut_str = self.date_debut_filter.get()
-        date_fin_str = self.date_fin_filter.get()
-
-        if date_debut_str and date_fin_str and "Date_debut" in self.filtered_df.columns:
+        # Date filter
+        if self.date_debut_filter.get() and self.date_fin_filter.get() and "Date_debut" in self.filtered_df.columns:
             try:
                 self.filtered_df["Date_debut"] = pd.to_datetime(self.filtered_df["Date_debut"], errors='coerce')
                 self.filtered_df = self.filtered_df[
-                    (self.filtered_df["Date_debut"] >= pd.to_datetime(date_debut_str)) &
-                    (self.filtered_df["Date_debut"] <= pd.to_datetime(date_fin_str))
+                    (self.filtered_df["Date_debut"] >= pd.to_datetime(self.date_debut_filter.get())) &
+                    (self.filtered_df["Date_debut"] <= pd.to_datetime(self.date_fin_filter.get()))
                 ]
             except:
                 pass
@@ -441,32 +422,42 @@ class CSVImportApp:
 
     def update_active_filters_display(self):
         active = []
-        for value, name in [
-            (self.segment_macro_var.get(), "SegmentMacro"),
-            (self.file_var.get(), "File"),
-            (self.segment_var.get(), "Segment"),
-            (self.dcr_var.get(), "DCR"),
-            (self.semaine_var.get(), "Semaine"),
-            (self.type_var.get(), "Type")
+        for var, name in [
+            (self.segment_macro_var, "SegmentMacro"), (self.file_var, "File"),
+            (self.segment_var, "Segment"), (self.dcr_var, "DCR"),
+            (self.semaine_var, "Semaine"), (self.type_var, "Type")
         ]:
-            if value:
-                active.append(f"{name}={value}")
-
+            if var.get():
+                active.append(f"{name}={var.get()}")
         if self.date_debut_filter.get() and self.date_fin_filter.get():
-            active.append(f"Date: {self.date_debut_filter.get()} → {self.date_fin_filter.get()}")
-
+            active.append(f"Date: {self.date_debut_filter.get()}→{self.date_fin_filter.get()}")
         self.active_filters_label.config(text=" | ".join(active) if active else "")
 
     def update_all_views(self):
-        self.update_data_table()
+        self.update_viz_table()
         self.update_summary()
         self.update_histogram()
+        self.update_data_table()
         self.update_preview()
         self.update_history_label()
 
+    def update_viz_table(self):
+        """Mettre à jour le tableau complet dans visualisation"""
+        for item in self.viz_tree.get_children():
+            self.viz_tree.delete(item)
+
+        if self.filtered_df is None:
+            self.row_count_label.config(text="0 lignes")
+            return
+
+        for idx, row in self.filtered_df.iterrows():
+            values = [row.get(col, "") for col in self.columns]
+            self.viz_tree.insert("", tk.END, values=values)
+
+        self.row_count_label.config(text=f"{len(self.filtered_df)} lignes")
+
     def update_data_table(self):
-        """Mettre à jour le tableau avec checkboxes"""
-        # Effacer l'ancien contenu
+        """Tableau avec checkboxes pour sélection"""
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
@@ -475,32 +466,26 @@ class CSVImportApp:
             return
 
         # En-têtes
-        headers = ["", "SegmentMacro", "Segment", "Type", "NbInteractions", "Date_debut"]
+        headers = ["", "Segment", "Type", "NbInteractions", "Date"]
         for i, h in enumerate(headers):
-            ttk.Label(self.scrollable_frame, text=h, font=('TkDefaultFont', 9, 'bold'),
-                     relief=tk.RIDGE, padding=5).grid(row=0, column=i, sticky="nsew")
+            ttk.Label(self.scrollable_frame, text=h, font=('TkDefaultFont', 8, 'bold'),
+                     relief=tk.RIDGE, padding=3).grid(row=0, column=i, sticky="nsew")
 
-        # Données avec checkboxes
         for row_num, (idx, row) in enumerate(self.filtered_df.iterrows(), start=1):
-            # Checkbox
             if idx not in self.check_vars:
                 self.check_vars[idx] = tk.BooleanVar(value=False)
 
             cb = ttk.Checkbutton(self.scrollable_frame, variable=self.check_vars[idx],
                                 command=self.on_check_change)
-            cb.grid(row=row_num, column=0, padx=5)
+            cb.grid(row=row_num, column=0)
 
-            # Données
-            values = [
-                str(row.get("SegmentMacro", "")),
+            for col_num, val in enumerate([
                 str(row.get("Segment", "")),
                 str(row.get("Type", "")),
                 str(row.get("NbInteractions", "")),
-                str(row.get("Date_debut", ""))
-            ]
-            for col_num, val in enumerate(values, start=1):
-                ttk.Label(self.scrollable_frame, text=val, padding=3).grid(
-                    row=row_num, column=col_num, sticky="w")
+                str(row.get("Date_debut", ""))[:10]
+            ], start=1):
+                ttk.Label(self.scrollable_frame, text=val, padding=2).grid(row=row_num, column=col_num, sticky="w")
 
         self.update_selection_count()
 
@@ -512,10 +497,8 @@ class CSVImportApp:
         if self.filtered_df is None:
             self.selection_count_label.config(text="0 / 0")
             return
-
         selected = sum(1 for idx in self.filtered_df.index if self.check_vars.get(idx, tk.BooleanVar()).get())
-        total = len(self.filtered_df)
-        self.selection_count_label.config(text=f"{selected} / {total} sélectionné(s)")
+        self.selection_count_label.config(text=f"{selected} / {len(self.filtered_df)}")
 
     def check_all(self):
         if self.filtered_df is None:
@@ -546,26 +529,30 @@ class CSVImportApp:
             self.summary_tree.delete(item)
 
         if self.filtered_df is None:
-            self.total_label.config(text="Total global: 0")
+            self.total_label.config(text="Total: 0")
             return
 
         if "Type" in self.filtered_df.columns and "NbInteractions" in self.filtered_df.columns:
             summary = self.filtered_df.groupby("Type")["NbInteractions"].sum().reset_index()
             for _, row in summary.iterrows():
-                self.summary_tree.insert("", tk.END, values=(row["Type"], f"{int(row['NbInteractions']):,}"))
+                type_name = row["Type"]
+                color = self.type_colors.get(type_name, "#000000")
+                self.summary_tree.insert("", tk.END, values=(type_name, f"{int(row['NbInteractions']):,}", "■"),
+                                        tags=(type_name,))
 
             total = self.filtered_df["NbInteractions"].sum()
-            self.total_label.config(text=f"Total global: {int(total):,}")
+            self.total_label.config(text=f"Total: {int(total):,}")
 
     def update_histogram(self):
+        """Histogramme avec couleurs par Type"""
         self.ax.clear()
 
         if self.filtered_df is None or self.filtered_df.empty:
-            self.ax.text(0.5, 0.5, 'Aucune donnée', ha='center', va='center', fontsize=14)
+            self.ax.text(0.5, 0.5, 'Aucune donnée', ha='center', va='center')
             self.canvas.draw()
             return
 
-        if "Date_debut" not in self.filtered_df.columns:
+        if "Date_debut" not in self.filtered_df.columns or "Type" not in self.filtered_df.columns:
             self.canvas.draw()
             return
 
@@ -577,35 +564,35 @@ class CSVImportApp:
             self.canvas.draw()
             return
 
-        grouped = df_chart.groupby("Date_debut")["NbInteractions"].sum().reset_index()
-        grouped = grouped.sort_values("Date_debut")
+        # Pivot pour stacked bar
+        pivot = df_chart.groupby([df_chart["Date_debut"].dt.strftime('%Y-%m-%d'), "Type"])["NbInteractions"].sum().unstack(fill_value=0)
 
-        bars = self.ax.bar(grouped["Date_debut"].dt.strftime('%Y-%m-%d'),
-                          grouped["NbInteractions"], color='#4CAF50')
+        # Plot stacked bar
+        dates = pivot.index.tolist()
+        bottom = np.zeros(len(dates))
 
-        for bar, val in zip(bars, grouped["NbInteractions"]):
-            self.ax.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
-                        f'{int(val)}', ha='center', va='bottom', fontsize=8)
+        for type_name in pivot.columns:
+            values = pivot[type_name].values
+            color = self.type_colors.get(type_name, '#888888')
+            self.ax.bar(dates, values, bottom=bottom, label=type_name, color=color)
+            bottom += values
 
         self.ax.set_xlabel('Date')
         self.ax.set_ylabel('NbInteractions')
-        self.ax.tick_params(axis='x', rotation=45)
+        self.ax.tick_params(axis='x', rotation=45, labelsize=8)
+        self.ax.legend(loc='upper right', fontsize=8)
         self.fig.tight_layout()
         self.canvas.draw()
 
     def get_selected_indices(self):
-        """Obtenir les indices des lignes cochées"""
         if self.filtered_df is None:
             return []
         return [idx for idx in self.filtered_df.index if self.check_vars.get(idx, tk.BooleanVar()).get()]
 
     def update_preview(self):
-        """Mettre à jour l'aperçu des modifications"""
         selected = self.get_selected_indices()
 
-        # Mise à jour label sélection
         if not selected:
-            self.modify_selection_label.config(text="Aucune ligne cochée")
             self.before_label.config(text="AVANT: -")
             self.after_label.config(text="APRÈS: -")
             self.diff_label.config(text="DIFF: -")
@@ -614,9 +601,7 @@ class CSVImportApp:
             return
 
         total_before = sum(self.df.at[idx, "NbInteractions"] for idx in selected)
-        self.modify_selection_label.config(text=f"{len(selected)} ligne(s) sélectionnée(s)")
 
-        # Calculer après
         if self.modify_mode.get() == "relative":
             pct = self.slider_var.get() / 100
             total_after = sum(self.df.at[idx, "NbInteractions"] * (1 + pct) for idx in selected)
@@ -634,17 +619,15 @@ class CSVImportApp:
         self.after_label.config(text=f"APRÈS: {total_after:,.0f}")
 
         color = '#008000' if diff >= 0 else '#cc0000'
-        sign = "+" if diff >= 0 else ""
-        self.diff_label.config(text=f"DIFF: {sign}{diff:,.0f} ({sign}{diff_pct:.1f}%)", foreground=color)
+        self.diff_label.config(text=f"DIFF: {'+' if diff >= 0 else ''}{diff:,.0f} ({diff_pct:+.1f}%)", foreground=color)
 
-        # Détail ligne par ligne
+        # Détail
         for item in self.detail_tree.get_children():
             self.detail_tree.delete(item)
 
-        for idx in selected[:100]:  # Limiter à 100 lignes
+        for idx in selected[:50]:
             row = self.df.loc[idx]
             avant = row["NbInteractions"]
-
             if self.modify_mode.get() == "relative":
                 apres = avant * (1 + self.slider_var.get() / 100)
             else:
@@ -653,19 +636,13 @@ class CSVImportApp:
                 except:
                     apres = avant
 
-            diff_row = apres - avant
-            sign = "+" if diff_row >= 0 else ""
-
             self.detail_tree.insert("", tk.END, values=(
-                row.get("Segment", ""),
-                row.get("Type", ""),
-                f"{avant:,.0f}",
-                f"{apres:,.0f}",
-                f"{sign}{diff_row:,.0f}"
+                row.get("Segment", ""), row.get("Type", ""),
+                f"{avant:,.0f}", f"{apres:,.0f}"
             ))
 
     def update_history_label(self):
-        self.history_label.config(text=f"{len(self.history)} annulation(s) possible(s)")
+        self.history_label.config(text=f"{len(self.history)} undo")
 
     def save_state(self):
         if self.df is not None:
@@ -677,13 +654,11 @@ class CSVImportApp:
     def apply_modification(self):
         selected = self.get_selected_indices()
         if not selected:
-            messagebox.showwarning("Attention", "Cochez des lignes à modifier")
+            messagebox.showwarning("Attention", "Cochez des lignes")
             return
 
         self.save_state()
-
-        total_before = 0
-        total_after = 0
+        total_before = total_after = 0
 
         for idx in selected:
             old_val = self.df.at[idx, "NbInteractions"]
@@ -702,13 +677,10 @@ class CSVImportApp:
             self.log_modification(idx, old_val, new_val)
 
         self.apply_filters()
-
         diff = total_after - total_before
-        messagebox.showinfo("Modification appliquée",
-            f"{len(selected)} ligne(s) modifiée(s)\n\n"
-            f"Total avant: {total_before:,}\n"
-            f"Total après: {total_after:,}\n"
-            f"Différence: {'+' if diff >= 0 else ''}{diff:,}")
+        messagebox.showinfo("OK", f"{len(selected)} lignes modifiées\n"
+                           f"Avant: {total_before:,}\nAprès: {total_after:,}\n"
+                           f"Diff: {'+' if diff >= 0 else ''}{diff:,}")
 
     def undo(self):
         if not self.history:
@@ -716,32 +688,24 @@ class CSVImportApp:
             return
         self.df = self.history.pop()
         self.apply_filters()
-        messagebox.showinfo("Succès", "Modification annulée")
+        messagebox.showinfo("OK", "Annulé")
 
     def log_modification(self, row_idx, old_value, new_value):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        row = self.df.loc[row_idx]
-
         with open(self.log_file, "a", encoding="utf-8") as f:
-            f.write(f"[{timestamp}] Segment: {row.get('Segment', 'N/A')}, "
-                   f"Type: {row.get('Type', 'N/A')}, "
-                   f"NbInteractions: {old_value} -> {new_value}\n")
+            row = self.df.loc[row_idx]
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                   f"{row.get('Segment', '')}, {row.get('Type', '')}: "
+                   f"{old_value} -> {new_value}\n")
 
     def view_log(self):
         if not os.path.exists(self.log_file):
             messagebox.showinfo("Info", "Aucun historique")
             return
-
         win = tk.Toplevel(self.root)
         win.title("Historique")
-        win.geometry("700x400")
-
+        win.geometry("600x400")
         text = tk.Text(win, wrap=tk.WORD)
-        scroll = ttk.Scrollbar(win, command=text.yview)
-        text.configure(yscrollcommand=scroll.set)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
         text.pack(fill=tk.BOTH, expand=True)
-
         with open(self.log_file, "r") as f:
             text.insert(tk.END, f.read())
         text.config(state=tk.DISABLED)
