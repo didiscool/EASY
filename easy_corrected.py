@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
-EASY Application - VERSION CORRIGÉE AMÉLIORÉE
+EASY Application - VERSION CORRIGÉE AMÉLIORÉE (AUTONOME)
 
 Implémente CORRECTEMENT la formule partout:
   NbInteractions = Global × Key_Temporal × Key_Type × Key_SegMacro × Key_Segment × Key_DCR × Key_File × Key_Offre
-
-Basé sur formula_engine.py qui gère la logique correcte.
 
 AMÉLIORATIONS:
 - Filtres pour TOUTES les colonnes
@@ -13,6 +11,8 @@ AMÉLIORATIONS:
 - Aperçu avant/après des modifications
 - Système d'undo (Ctrl-Z)
 - Normalisation automatique
+
+VERSION: AUTONOME (Intègre FormulaEngine en interne)
 """
 
 import tkinter as tk
@@ -25,8 +25,175 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import numpy as np
 import copy
+from typing import Dict, List, Optional
 
-from formula_engine import FormulaEngine
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FORMULA ENGINE - Moteur de calcul intégré
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class FormulaEngine:
+    """Moteur de calcul de la formule - VERSION INTÉGRÉE"""
+
+    def __init__(self, df: pd.DataFrame):
+        """Initialiser avec les données"""
+        self.df = df.copy()
+        self.global_val = df["NbInteractions"].sum()
+        self.keys = {}
+        self.recalculate_keys()
+
+    def recalculate_keys(self):
+        """Recalculer toutes les clés depuis les données"""
+        if self.df.empty:
+            self.keys = {
+                "temporal": {}, "type": {}, "segmacro": {},
+                "segment": {}, "dcr": {}, "file": {}, "offre": {}
+            }
+            return
+
+        total = self.df["NbInteractions"].sum()
+        if total == 0:
+            total = 1
+
+        # Clé temporelle (par date/créneau)
+        if "Date_debut" in self.df.columns:
+            self.df["Date_debut"] = pd.to_datetime(self.df["Date_debut"], errors='coerce')
+            temporal_by_date = self.df.groupby(self.df["Date_debut"].dt.strftime("%Y-%m-%d"))["NbInteractions"].sum()
+            self.keys["temporal"] = (temporal_by_date / total).to_dict()
+        else:
+            self.keys["temporal"] = {}
+
+        # Clés par dimension
+        for col_name, key_name in [
+            ("Type", "type"), ("SegmentMacro", "segmacro"),
+            ("Segment", "segment"), ("DCR", "dcr"),
+            ("File", "file"), ("Offre", "offre")
+        ]:
+            if col_name in self.df.columns:
+                dim_sum = self.df.groupby(col_name)["NbInteractions"].sum()
+                self.keys[key_name] = (dim_sum / total).to_dict()
+            else:
+                self.keys[key_name] = {}
+
+    def get_key(self, key_type: str, value: str) -> float:
+        """Obtenir la valeur d'une clé"""
+        return self.keys.get(key_type, {}).get(value, 0.0)
+
+    def calculate_for_row(self, row: pd.Series) -> float:
+        """Calculer NbInteractions pour une ligne selon la formule"""
+        result = self.global_val
+        result *= self.get_key("temporal", str(row.get("Date_debut", "")))
+        result *= self.get_key("type", str(row.get("Type", "")))
+        result *= self.get_key("segmacro", str(row.get("SegmentMacro", "")))
+        result *= self.get_key("segment", str(row.get("Segment", "")))
+        result *= self.get_key("dcr", str(row.get("DCR", "")))
+        result *= self.get_key("file", str(row.get("File", "")))
+        result *= self.get_key("offre", str(row.get("Offre", "")))
+        return result
+
+    def get_combinatorial_breakdown(self, filters: Optional[Dict] = None) -> pd.DataFrame:
+        """Obtenir la répartition combinatoire"""
+        df = self.df.copy()
+        if filters:
+            for col, value in filters.items():
+                if col in df.columns and value:
+                    df = df[df[col] == value]
+
+        if df.empty:
+            return pd.DataFrame()
+
+        columns_to_group = ["Type", "SegmentMacro", "Segment", "File", "DCR", "Offre"]
+        columns_available = [c for c in columns_to_group if c in df.columns]
+
+        if not columns_available:
+            return pd.DataFrame()
+
+        grouped = df.groupby(columns_available, dropna=False).agg({"NbInteractions": "sum"}).reset_index()
+
+        def calc_for_combo(row):
+            result = self.global_val
+            for col in columns_available:
+                key_type = col.lower()
+                value = str(row[col])
+                key_val = self.keys.get(key_type, {}).get(value, 0.0)
+                if key_val == 0:
+                    subset_sum = df[df[col] == value]["NbInteractions"].sum()
+                    key_val = subset_sum / self.global_val if self.global_val > 0 else 0
+                result *= key_val
+            return result
+
+        grouped["NbInteractions_Calculated"] = grouped.apply(calc_for_combo, axis=1)
+
+        total = grouped["NbInteractions_Calculated"].sum()
+        if total > 0:
+            grouped["Contribution_%"] = (grouped["NbInteractions_Calculated"] / total * 100)
+        else:
+            grouped["Contribution_%"] = 0
+
+        return grouped.sort_values("NbInteractions_Calculated", ascending=False)
+
+    def filter_and_apply_formula(self, filters: Dict) -> pd.DataFrame:
+        """Filtrer les données et appliquer la formule"""
+        df = self.df.copy()
+        for col, value in filters.items():
+            if col in df.columns and value:
+                df = df[df[col] == value]
+        if not df.empty:
+            self.recalculate_keys()
+        return df
+
+    def modify_key(self, key_type: str, key_value: str, new_weight: float):
+        """Modifier une clé et recalculer"""
+        if key_type in self.keys:
+            self.keys[key_type][key_value] = new_weight
+            total = sum(self.keys[key_type].values())
+            if total > 0:
+                for k in self.keys[key_type]:
+                    self.keys[key_type][k] = self.keys[key_type][k] / total
+
+    def construct_rows(self, global_val: float, types: List[str], segmacros: List[str],
+                      segments: List[str], files: List[str], dcrs: List[str],
+                      offres: List[str], dates: List[str]) -> pd.DataFrame:
+        """Construire des lignes selon la formule"""
+        rows = []
+
+        def get_or_calc_key(key_type: str, value: str) -> float:
+            key_val = self.keys.get(key_type, {}).get(value, None)
+            if key_val is not None:
+                return key_val
+            else:
+                dict_size = len(self.keys.get(key_type, {}))
+                return 1.0 / dict_size if dict_size > 0 else 0.0
+
+        for date in dates:
+            for type_val in types:
+                for segmacro_val in segmacros:
+                    for segment_val in segments:
+                        for file_val in files:
+                            for dcr_val in dcrs:
+                                for offre_val in offres:
+                                    row = {
+                                        "Date_debut": date, "Type": type_val,
+                                        "SegmentMacro": segmacro_val, "Segment": segment_val,
+                                        "File": file_val, "DCR": dcr_val, "Offre": offre_val
+                                    }
+                                    nb = global_val
+                                    nb *= get_or_calc_key("temporal", str(date))
+                                    nb *= get_or_calc_key("type", str(type_val))
+                                    nb *= get_or_calc_key("segmacro", str(segmacro_val))
+                                    nb *= get_or_calc_key("segment", str(segment_val))
+                                    nb *= get_or_calc_key("file", str(file_val))
+                                    nb *= get_or_calc_key("dcr", str(dcr_val))
+                                    nb *= get_or_calc_key("offre", str(offre_val))
+                                    row["NbInteractions"] = int(round(nb))
+                                    rows.append(row)
+
+        return pd.DataFrame(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# APPLICATION UI
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
 class EASYCorrected:
